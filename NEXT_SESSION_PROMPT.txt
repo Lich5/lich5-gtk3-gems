@@ -1,0 +1,27 @@
+================================================================================
+COPY THIS PROMPT FOR THE NEXT CLAUDE SESSION
+================================================================================
+
+I'm continuing work on the Lich5 GTK3 Binary Gems project.
+
+Repository: https://github.com/Lich5/lich5-gtk3-gems
+Local path: /home/user/lich5-gtk3-gems
+
+Previous session completed:
+- Full repository scaffolding created
+- All files committed locally (2 commits ready to push)
+- Ready for Phase 1: Windows POC
+
+CRITICAL FILES TO READ FIRST:
+1. /home/user/lich5-gtk3-gems/.claude/HANDOFF_2025-12-28.md
+2. /home/user/lich5-gtk3-gems/.claude/PROJECT_CONTEXT.md
+
+IMMEDIATE TASKS:
+1. Push the 2 local commits to GitHub (origin/main)
+2. Verify GitHub Actions CI workflow passes
+3. Import glib2 source from ruby-gnome
+4. Begin binary gem build implementation
+
+Please start by reading the handoff file, then push the commits to GitHub.
+
+================================================================================
