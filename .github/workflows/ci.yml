@@ -1,9 +1,12 @@
 name: CI
 
+# Temporarily disabled during initial development
+# Re-enable when ready for validation
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
+  workflow_dispatch:  # Manual trigger only
+  # push:
+  #   branches: [main, develop]
+  # pull_request:
 
 jobs:
   lint:
