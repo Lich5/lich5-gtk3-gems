@@ -8,17 +8,22 @@ on:
 
 jobs:
   build-windows-x64:
-    name: Build binary gems (Windows x64)
+    name: Build binary gems (Windows x64, Ruby ${{ matrix.ruby }})
     runs-on: windows-latest
+
+    strategy:
+      matrix:
+        ruby: ['3.3', '3.4', '4.0']
+      fail-fast: false
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Ruby 3.3.0 (x64)
+      - name: Set up Ruby ${{ matrix.ruby }} (x64)
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.3.0'
+          ruby-version: '${{ matrix.ruby }}'
           bundler-cache: true
 
       - name: Install MSYS2 (x64)
@@ -66,27 +71,32 @@ jobs:
         run: |
           ruby -I test test/glib2_spec.rb
 
-      - name: Upload Windows x64 gems
+      - name: Upload Windows x64 gems (Ruby ${{ matrix.ruby }})
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: glib2-x64-mingw32
+          name: glib2-x64-mingw32-ruby${{ matrix.ruby }}
           path: pkg/glib2-*.gem
           retention-days: 90
           if-no-files-found: warn
 
   build-windows-x86:
-    name: Build binary gems (Windows x86)
+    name: Build binary gems (Windows x86, Ruby ${{ matrix.ruby }})
     runs-on: windows-latest
+
+    strategy:
+      matrix:
+        ruby: ['3.3', '3.4', '4.0']
+      fail-fast: false
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Ruby 3.3.0 (x86)
+      - name: Set up Ruby ${{ matrix.ruby }} (x86)
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.3.0'
+          ruby-version: '${{ matrix.ruby }}'
           bundler-cache: true
 
       - name: Install MSYS2 (x86)
@@ -136,11 +146,11 @@ jobs:
         run: |
           ruby -I test test/glib2_spec.rb
 
-      - name: Upload Windows x86 gems
+      - name: Upload Windows x86 gems (Ruby ${{ matrix.ruby }})
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: glib2-x86-mingw32
+          name: glib2-x86-mingw32-ruby${{ matrix.ruby }}
           path: pkg/glib2-*.gem
           retention-days: 90
           if-no-files-found: warn

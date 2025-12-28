@@ -5,6 +5,14 @@ require 'fileutils'
 
 # Configuration
 RUBY_GNOME_VERSION = ENV['RUBY_GNOME_VERSION'] || '4.3.4'
+
+# Supported Ruby versions for binary gems
+RUBY_VERSIONS = %w[
+  3.3
+  3.4
+  4.0
+].freeze
+
 PLATFORMS = %w[
   x64-mingw32
   x86_64-darwin
@@ -202,7 +210,8 @@ namespace :build do
   end
 
   def build_binary_gem(gem_name, gem_dir)
-    puts "Building #{gem_name} (Windows binary gem)..."
+    current_ruby = "#{RUBY_VERSION.major}.#{RUBY_VERSION.minor}"
+    puts "Building #{gem_name} (Windows binary gem for Ruby #{current_ruby})..."
 
     unless Gem.win_platform?
       puts "⚠️  Binary gem build can only run on Windows"
@@ -215,7 +224,7 @@ namespace :build do
       Dir.chdir(gem_dir)
 
       # Step 1: Compile native extension
-      puts "  1. Compiling native extension..."
+      puts "  1. Compiling native extension for Ruby #{current_ruby}..."
       system("ruby extconf.rb") unless File.exist?("Makefile")
       unless File.exist?("Makefile")
         puts "❌ Failed to generate Makefile"
@@ -237,8 +246,8 @@ namespace :build do
       FileUtils.cp(so_file, lib_dir)
       puts "  ✅ Compiled extension copied to lib/"
 
-      # Step 3: Modify gemspec for binary platform
-      puts "  2. Preparing gemspec for Windows binary..."
+      # Step 3: Modify gemspec for binary platform and Ruby version
+      puts "  2. Preparing gemspec for Windows binary (Ruby #{current_ruby})..."
       gemspec_path = "#{gem_name}.gemspec"
       gemspec_content = File.read(gemspec_path)
 
@@ -253,6 +262,26 @@ namespace :build do
         modified_gemspec.gsub!(
           /^(\s*s\.version\s*=.*?)$/,
           "\\1\n  s.platform = Gem::Platform.new('x64-mingw32')"
+        )
+      end
+
+      # Add Ruby version constraint for this build
+      unless modified_gemspec.include?("required_ruby_version")
+        # Determine version constraint based on current Ruby
+        ruby_constraint = case current_ruby
+                          when '3.3'
+                            "'>= 3.3.0, < 3.4.0'"
+                          when '3.4'
+                            "'>= 3.4.0, < 4.0.0'"
+                          when '4.0'
+                            "'>= 4.0.0, < 5.0.0'"
+                          else
+                            "'>= #{current_ruby}.0'"
+                          end
+
+        modified_gemspec.gsub!(
+          /^(\s*s\.platform.*?)$/,
+          "\\1\n  s.required_ruby_version = #{ruby_constraint}"
         )
       end
 
