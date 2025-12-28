@@ -7,21 +7,26 @@ on:
   pull_request:
 
 jobs:
-  build-windows:
-    name: Build gems on Windows
+  build-windows-x64:
+    name: Build binary gems (Windows x64, Ruby ${{ matrix.ruby }})
     runs-on: windows-latest
+
+    strategy:
+      matrix:
+        ruby: ['3.3', '3.4', '4.0']
+      fail-fast: false
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Ruby
+      - name: Set up Ruby ${{ matrix.ruby }} (x64)
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.3.0'
+          ruby-version: '${{ matrix.ruby }}'
           bundler-cache: true
 
-      - name: Install MSYS2
+      - name: Install MSYS2 (x64)
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -30,36 +35,174 @@ jobs:
             mingw-w64-x86_64-gtk3
             mingw-w64-x86_64-toolchain
 
-      - name: Extract GTK3 vendor libraries
+      - name: Extract GTK3 vendor libraries (x64)
         shell: msys2 {0}
         run: |
-          echo "Extracting GTK3 libraries from MSYS2..."
+          echo "Extracting GTK3 libraries from MSYS2 (x64)..."
           mkdir -p vendor/windows/x64/bin
           mkdir -p vendor/windows/x64/share
 
-          # Copy GTK3 DLLs (this will be replaced by scripts/download-gtk3-libs.sh)
-          echo "TODO: Implement DLL extraction script"
-          echo "For now, listing available GTK3 libraries:"
-          ls -lh /mingw64/bin/libgtk*.dll || true
-          ls -lh /mingw64/bin/libglib*.dll || true
+          # Copy GTK3 and GLib DLLs to vendor
+          echo "Copying GLib2 DLLs..."
+          cp /mingw64/bin/libglib-2.0-0.dll vendor/windows/x64/bin/ || true
+          cp /mingw64/bin/libgobject-2.0-0.dll vendor/windows/x64/bin/ || true
+          cp /mingw64/bin/libgio-2.0-0.dll vendor/windows/x64/bin/ || true
+
+          # Copy dependencies
+          cp /mingw64/bin/libintl-8.dll vendor/windows/x64/bin/ || true
+          cp /mingw64/bin/libiconv-2.dll vendor/windows/x64/bin/ || true
+          cp /mingw64/bin/libpcre2-8-0.dll vendor/windows/x64/bin/ || true
+
+          ls -lh vendor/windows/x64/bin/ || echo "Vendor bin directory is empty"
+
+      - name: Build glib2 binary gem (x64)
+        run: |
+          ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('glib2')"
+        env:
+          BINARY_GEM: 'true'
 
       - name: Show repository status
         run: |
           ruby --version
           gem --version
-          bundle --version
-          rake status
+          dir pkg/ || echo "pkg/ directory not created"
 
-      - name: Run tests (when implemented)
+      - name: Run integration tests
         run: |
-          echo "Tests not yet implemented"
-          # rake test:quick
+          ruby -I test test/glib2_spec.rb
 
-      - name: Upload build artifacts (when gems are built)
+      - name: Upload compiled extension (x64, Ruby ${{ matrix.ruby }})
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: gems-windows-x64
-          path: pkg/*.gem
+          name: glib2-extensions-x64
+          path: gems/glib2/lib/glib2/glib2-ruby*.so
+          retention-days: 30
+          if-no-files-found: warn
+
+  build-windows-x86:
+    name: Build binary gems (Windows x86, Ruby ${{ matrix.ruby }})
+    runs-on: windows-latest
+
+    strategy:
+      matrix:
+        ruby: ['3.3', '3.4', '4.0']
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby ${{ matrix.ruby }} (x86)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '${{ matrix.ruby }}'
+          bundler-cache: true
+
+      - name: Install MSYS2 (x86)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW32
+          update: true
+          install: >-
+            mingw-w64-i686-gtk3
+            mingw-w64-i686-toolchain
+
+      - name: Extract GTK3 vendor libraries (x86)
+        shell: msys2 {0}
+        run: |
+          echo "Extracting GTK3 libraries from MSYS2 (x86)..."
+          mkdir -p vendor/windows/x86/bin
+          mkdir -p vendor/windows/x86/share
+
+          # Copy GTK3 and GLib DLLs to vendor
+          echo "Copying GLib2 DLLs (x86)..."
+          cp /mingw32/bin/libglib-2.0-0.dll vendor/windows/x86/bin/ || true
+          cp /mingw32/bin/libgobject-2.0-0.dll vendor/windows/x86/bin/ || true
+          cp /mingw32/bin/libgio-2.0-0.dll vendor/windows/x86/bin/ || true
+
+          # Copy dependencies
+          cp /mingw32/bin/libintl-8.dll vendor/windows/x86/bin/ || true
+          cp /mingw32/bin/libiconv-2.dll vendor/windows/x86/bin/ || true
+          cp /mingw32/bin/libpcre2-8-0.dll vendor/windows/x86/bin/ || true
+
+          ls -lh vendor/windows/x86/bin/ || echo "Vendor bin directory is empty"
+
+      - name: Build glib2 binary gem (x86) - x86-mingw32 platform
+        run: |
+          # Note: This would need to target x86-mingw32 platform
+          # Currently building as x64-mingw32 as Ruby setup doesn't support x86
+          ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('glib2')"
+        env:
+          BINARY_GEM: 'true'
+
+      - name: Show repository status
+        run: |
+          ruby --version
+          gem --version
+          dir pkg/ || echo "pkg/ directory not created"
+
+      - name: Run integration tests
+        run: |
+          ruby -I test test/glib2_spec.rb
+
+      - name: Upload compiled extension (x86, Ruby ${{ matrix.ruby }})
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: glib2-extensions-x86
+          path: gems/glib2/lib/glib2/glib2-ruby*.so
+          retention-days: 30
+          if-no-files-found: warn
+
+  # Consolidation job: combines all .so files into final gems
+  build-consolidated-gems:
+    name: Consolidate and build final gems
+    runs-on: windows-latest
+    needs: [build-windows-x64, build-windows-x86]
+    if: success()
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby 3.3.0
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3.0'
+          bundler-cache: true
+
+      - name: Download x64 extensions
+        uses: actions/download-artifact@v4
+        with:
+          name: glib2-extensions-x64
+          path: gems/glib2/lib/glib2/
+
+      - name: Download x86 extensions
+        uses: actions/download-artifact@v4
+        with:
+          name: glib2-extensions-x86
+          path: gems/glib2/lib/glib2/
+
+      - name: Build consolidated x64 gem (multi-Ruby)
+        run: |
+          cd gems/glib2
+          # Remove extension building since we have precompiled .so files
+          ruby -I../../ -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('glib2')"
+        env:
+          BINARY_GEM: 'true'
+
+      - name: Copy gem to output
+        run: |
+          mkdir -p pkg
+          move gems/glib2/pkg/glib2-*.gem pkg/ || echo "No gem produced"
+          dir pkg/
+
+      - name: Upload consolidated gem (x64)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: glib2-x64-mingw32-multiruby
+          path: pkg/glib2-*-x64-mingw32.gem
           retention-days: 90
           if-no-files-found: warn

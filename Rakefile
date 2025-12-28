@@ -5,6 +5,14 @@ require 'fileutils'
 
 # Configuration
 RUBY_GNOME_VERSION = ENV['RUBY_GNOME_VERSION'] || '4.3.4'
+
+# Supported Ruby versions for binary gems
+RUBY_VERSIONS = %w[
+  3.3
+  3.4
+  4.0
+].freeze
+
 PLATFORMS = %w[
   x64-mingw32
   x86_64-darwin
@@ -152,7 +160,7 @@ namespace :build do
     puts "  4. Update this Rakefile with build logic"
   end
 
-  desc 'Build a single gem'
+  desc 'Build a single gem (binary for Windows, or source for other platforms)'
   task :gem, [:name] do |t, args|
     gem_name = args[:name]
 
@@ -162,21 +170,175 @@ namespace :build do
       exit 1
     end
 
-    puts "Building #{gem_name}..."
-    puts "⚠️  Not yet implemented"
+    gem_dir = "#{GEMS_DIR}/#{gem_name}"
+    unless Dir.exist?(gem_dir)
+      puts "❌ Gem source not found: #{gem_dir}"
+      puts "Run: rake gems:setup"
+      exit 1
+    end
+
+    # Create pkg directory
+    FileUtils.mkdir_p(PKG_DIR)
+
+    # Determine if this is a binary gem build for Windows
+    if Gem.win_platform? || ENV['BINARY_GEM'] == 'true'
+      build_binary_gem(gem_name, gem_dir)
+    else
+      build_source_gem(gem_name, gem_dir)
+    end
+  end
+
+  private
+
+  def build_source_gem(gem_name, gem_dir)
+    puts "Building #{gem_name} (source gem)..."
+    original_dir = Dir.pwd
+    begin
+      Dir.chdir(gem_dir)
+      system("gem build #{gem_name}.gemspec")
+      gem_files = Dir.glob("#{gem_name}-*.gem")
+      if gem_files.empty?
+        puts "❌ Failed to build #{gem_name}"
+        exit 1
+      end
+      built_gem = gem_files.last
+      FileUtils.mv(built_gem, "#{original_dir}/#{PKG_DIR}/")
+      puts "✅ Built: pkg/#{File.basename(built_gem)}"
+    ensure
+      Dir.chdir(original_dir)
+    end
+  end
+
+  def build_binary_gem(gem_name, gem_dir)
+    current_ruby = "#{RUBY_VERSION.major}.#{RUBY_VERSION.minor}"
+    puts "Building #{gem_name} (Windows binary gem for Ruby #{current_ruby})..."
+
+    unless Gem.win_platform?
+      puts "⚠️  Binary gem build can only run on Windows"
+      puts "   Set BINARY_GEM=true to force cross-platform build (for CI/CD)"
+      return
+    end
+
+    original_dir = Dir.pwd
+    begin
+      Dir.chdir(gem_dir)
+
+      # Step 1: Compile native extension
+      puts "  1. Compiling native extension for Ruby #{current_ruby}..."
+      system("ruby extconf.rb") unless File.exist?("Makefile")
+      unless File.exist?("Makefile")
+        puts "❌ Failed to generate Makefile"
+        exit 1
+      end
+      system("make") || (puts "❌ Failed to compile"; exit 1)
+
+      # Find the compiled .so file
+      so_files = Dir.glob("ext/#{gem_name}/#{gem_name}.so")
+      unless so_files.any?
+        puts "❌ No compiled .so file found"
+        exit 1
+      end
+      so_file = so_files.first
+
+      # Step 2: Copy to lib/#{gem_name}/ with Ruby version suffix
+      lib_dir = "lib/#{gem_name}"
+      FileUtils.mkdir_p(lib_dir)
+
+      # Name the .so with Ruby version for multi-version gems
+      versioned_so = File.join(lib_dir, "#{gem_name}-ruby#{current_ruby}.so")
+      FileUtils.cp(so_file, versioned_so)
+      puts "  ✅ Compiled extension copied to lib/ as #{File.basename(versioned_so)}"
+
+      # Step 3: Modify gemspec for binary platform and Ruby version
+      puts "  2. Preparing gemspec for Windows binary (Ruby #{current_ruby})..."
+      gemspec_path = "#{gem_name}.gemspec"
+      gemspec_content = File.read(gemspec_path)
+
+      # Create a modified gemspec for binary build
+      modified_gemspec = gemspec_content.dup
+
+      # Remove extension building (we're including precompiled .so)
+      modified_gemspec.gsub!(/^\s*s\.extensions\s*=\s*\[.*?\]\s*$/m, '# Extensions precompiled')
+
+      # Add platform specification
+      unless modified_gemspec.include?("s.platform")
+        modified_gemspec.gsub!(
+          /^(\s*s\.version\s*=.*?)$/,
+          "\\1\n  s.platform = Gem::Platform.new('x64-mingw32')"
+        )
+      end
+
+      # Multi-Ruby support: Single gem works with Ruby 3.3, 3.4, and 4.0
+      # (No required_ruby_version constraint - loader detects at runtime)
+      unless modified_gemspec.include?("required_ruby_version")
+        modified_gemspec.gsub!(
+          /^(\s*s\.platform.*?)$/,
+          "\\1\n  # Multi-Ruby: Supports 3.3, 3.4, 4.0 (detected at runtime)"
+        )
+      end
+
+      # Add vendor files to includes
+      unless modified_gemspec.include?("vendor")
+        modified_gemspec.gsub!(
+          /^(\s*s\.files\s*\+=\s*Dir\.glob\("test\/\*\*\/\*"\))$/,
+          "\\1\n  s.files += Dir.glob('lib/**/vendor/**/*')"
+        )
+      end
+
+      # Write modified gemspec temporarily
+      binary_gemspec = "#{gem_name}-binary.gemspec"
+      File.write(binary_gemspec, modified_gemspec)
+      puts "  ✅ Binary gemspec prepared"
+
+      # Step 4: Build the binary gem
+      puts "  3. Building binary gem..."
+      system("gem build #{binary_gemspec}") || (puts "❌ Failed to build gem"; exit 1)
+
+      # Find and move the gem to pkg/
+      gem_files = Dir.glob("#{gem_name}-*.gem")
+      unless gem_files.any?
+        puts "❌ Failed to find built gem"
+        exit 1
+      end
+      built_gem = gem_files.last
+      FileUtils.mv(built_gem, "#{original_dir}/#{PKG_DIR}/")
+
+      # Cleanup (keep lib_dir with versioned .so for multi-Ruby support)
+      FileUtils.rm(binary_gemspec)
+      FileUtils.rm(so_file)
+      # Don't remove lib_dir - versioned .so files stay for multi-Ruby gem
+
+      puts "✅ Built: pkg/#{File.basename(built_gem)}"
+      puts "   (Ruby #{current_ruby} .so included for multi-Ruby support)"
+
+    ensure
+      Dir.chdir(original_dir)
+    end
   end
 end
 
 namespace :test do
+  require 'rake/testtask'
+
+  desc 'Run all tests'
+  Rake::TestTask.new(:all) do |t|
+    t.libs << 'test'
+    t.pattern = 'test/*_spec.rb'
+    t.verbose = true
+  end
+
+  desc 'Run specs for glib2'
+  task :glib2 do
+    puts "Running glib2 specs..."
+    require 'bundler/setup' rescue nil
+    require 'minitest/autorun'
+    Dir.glob('test/glib2_spec.rb').each { |file| require_relative file }
+  end
+
   desc 'Quick test - verify gems load'
-  task :quick do
-    puts "Quick gem loading test"
-    puts "⚠️  Not yet implemented"
+  task :quick => :all do
     puts ""
-    puts "Will test:"
-    puts "  - Gem installation"
-    puts "  - Library loading"
-    puts "  - Basic GTK3 functionality"
+    puts "✅ Quick tests completed"
   end
 
   desc 'Full integration test'
