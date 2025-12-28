@@ -240,11 +240,14 @@ namespace :build do
       end
       so_file = so_files.first
 
-      # Step 2: Copy to lib/#{gem_name}/
+      # Step 2: Copy to lib/#{gem_name}/ with Ruby version suffix
       lib_dir = "lib/#{gem_name}"
       FileUtils.mkdir_p(lib_dir)
-      FileUtils.cp(so_file, lib_dir)
-      puts "  ✅ Compiled extension copied to lib/"
+
+      # Name the .so with Ruby version for multi-version gems
+      versioned_so = File.join(lib_dir, "#{gem_name}-ruby#{current_ruby}.so")
+      FileUtils.cp(so_file, versioned_so)
+      puts "  ✅ Compiled extension copied to lib/ as #{File.basename(versioned_so)}"
 
       # Step 3: Modify gemspec for binary platform and Ruby version
       puts "  2. Preparing gemspec for Windows binary (Ruby #{current_ruby})..."
@@ -265,23 +268,12 @@ namespace :build do
         )
       end
 
-      # Add Ruby version constraint for this build
+      # Multi-Ruby support: Single gem works with Ruby 3.3, 3.4, and 4.0
+      # (No required_ruby_version constraint - loader detects at runtime)
       unless modified_gemspec.include?("required_ruby_version")
-        # Determine version constraint based on current Ruby
-        ruby_constraint = case current_ruby
-                          when '3.3'
-                            "'>= 3.3.0, < 3.4.0'"
-                          when '3.4'
-                            "'>= 3.4.0, < 4.0.0'"
-                          when '4.0'
-                            "'>= 4.0.0, < 5.0.0'"
-                          else
-                            "'>= #{current_ruby}.0'"
-                          end
-
         modified_gemspec.gsub!(
           /^(\s*s\.platform.*?)$/,
-          "\\1\n  s.required_ruby_version = #{ruby_constraint}"
+          "\\1\n  # Multi-Ruby: Supports 3.3, 3.4, 4.0 (detected at runtime)"
         )
       end
 
@@ -311,12 +303,13 @@ namespace :build do
       built_gem = gem_files.last
       FileUtils.mv(built_gem, "#{original_dir}/#{PKG_DIR}/")
 
-      # Cleanup
+      # Cleanup (keep lib_dir with versioned .so for multi-Ruby support)
       FileUtils.rm(binary_gemspec)
       FileUtils.rm(so_file)
-      FileUtils.rm_rf(lib_dir) if File.exist?("Makefile")
+      # Don't remove lib_dir - versioned .so files stay for multi-Ruby gem
 
       puts "✅ Built: pkg/#{File.basename(built_gem)}"
+      puts "   (Ruby #{current_ruby} .so included for multi-Ruby support)"
 
     ensure
       Dir.chdir(original_dir)

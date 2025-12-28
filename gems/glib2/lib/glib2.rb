@@ -33,6 +33,25 @@ if Gem.win_platform?
   end
 end
 
+# Load the correct precompiled extension for this Ruby version
+# Binary gem includes .so files for Ruby 3.3, 3.4, and 4.0
+if defined?(RUBY_ENGINE) && RUBY_ENGINE == 'cruby'
+  ruby_version = "#{RUBY_VERSION.major}#{RUBY_VERSION.minor}"
+  glib2_dir = File.join(__dir__, 'glib2')
+
+  # Try to load version-specific .so
+  so_file = File.join(glib2_dir, "glib2-ruby#{ruby_version}.so")
+  if File.exist?(so_file)
+    require_relative so_file
+  else
+    # Fallback to generic glib2.so (source build)
+    require "#{glib2_dir}/glib2.so"
+  end
+else
+  # Non-CRuby or source build
+  require "glib2.so"
+end
+
 module GLib
   module_function
   def check_binding_version?(major, minor, micro)

@@ -71,13 +71,13 @@ jobs:
         run: |
           ruby -I test test/glib2_spec.rb
 
-      - name: Upload Windows x64 gems (Ruby ${{ matrix.ruby }})
+      - name: Upload compiled extension (x64, Ruby ${{ matrix.ruby }})
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: glib2-x64-mingw32-ruby${{ matrix.ruby }}
-          path: pkg/glib2-*.gem
-          retention-days: 90
+          name: glib2-extensions-x64
+          path: gems/glib2/lib/glib2/glib2-ruby*.so
+          retention-days: 30
           if-no-files-found: warn
 
   build-windows-x86:
@@ -146,11 +146,63 @@ jobs:
         run: |
           ruby -I test test/glib2_spec.rb
 
-      - name: Upload Windows x86 gems (Ruby ${{ matrix.ruby }})
+      - name: Upload compiled extension (x86, Ruby ${{ matrix.ruby }})
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: glib2-x86-mingw32-ruby${{ matrix.ruby }}
-          path: pkg/glib2-*.gem
+          name: glib2-extensions-x86
+          path: gems/glib2/lib/glib2/glib2-ruby*.so
+          retention-days: 30
+          if-no-files-found: warn
+
+  # Consolidation job: combines all .so files into final gems
+  build-consolidated-gems:
+    name: Consolidate and build final gems
+    runs-on: windows-latest
+    needs: [build-windows-x64, build-windows-x86]
+    if: success()
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby 3.3.0
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3.0'
+          bundler-cache: true
+
+      - name: Download x64 extensions
+        uses: actions/download-artifact@v4
+        with:
+          name: glib2-extensions-x64
+          path: gems/glib2/lib/glib2/
+
+      - name: Download x86 extensions
+        uses: actions/download-artifact@v4
+        with:
+          name: glib2-extensions-x86
+          path: gems/glib2/lib/glib2/
+
+      - name: Build consolidated x64 gem (multi-Ruby)
+        run: |
+          cd gems/glib2
+          # Remove extension building since we have precompiled .so files
+          ruby -I../../ -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('glib2')"
+        env:
+          BINARY_GEM: 'true'
+
+      - name: Copy gem to output
+        run: |
+          mkdir -p pkg
+          move gems/glib2/pkg/glib2-*.gem pkg/ || echo "No gem produced"
+          dir pkg/
+
+      - name: Upload consolidated gem (x64)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: glib2-x64-mingw32-multiruby
+          path: pkg/glib2-*-x64-mingw32.gem
           retention-days: 90
           if-no-files-found: warn
