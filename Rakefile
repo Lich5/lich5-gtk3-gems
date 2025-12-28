@@ -210,7 +210,9 @@ namespace :build do
   end
 
   def build_binary_gem(gem_name, gem_dir)
-    current_ruby = "#{RUBY_VERSION.major}.#{RUBY_VERSION.minor}"
+    # RUBY_VERSION is a string like "3.4.8", parse it for version numbers
+    ruby_parts = RUBY_VERSION.split('.')
+    current_ruby = "#{ruby_parts[0]}#{ruby_parts[1]}"
     puts "Building #{gem_name} (Windows binary gem for Ruby #{current_ruby})..."
 
     unless Gem.win_platform?
