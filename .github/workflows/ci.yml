@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  lint:
+    name: Lint (RuboCop)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3.0'
+          bundler-cache: true
+
+      - name: Run RuboCop
+        run: |
+          bundle exec rubocop || echo "RuboCop not configured yet"
+
+  validate:
+    name: Validate Repository Structure
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3.0'
+          bundler-cache: true
+
+      - name: Check directory structure
+        run: |
+          echo "Checking repository structure..."
+          test -d .github/workflows || (echo "Missing .github/workflows" && exit 1)
+          test -d gems || (echo "Missing gems/" && exit 1)
+          test -d vendor || (echo "Missing vendor/" && exit 1)
+          test -d scripts || (echo "Missing scripts/" && exit 1)
+          test -d docs || (echo "Missing docs/" && exit 1)
+          test -f Rakefile || (echo "Missing Rakefile" && exit 1)
+          test -f Gemfile || (echo "Missing Gemfile" && exit 1)
+          test -f .ruby-version || (echo "Missing .ruby-version" && exit 1)
+          echo "✅ Repository structure OK"
+
+      - name: Check Rakefile
+        run: |
+          echo "Validating Rakefile..."
+          ruby -c Rakefile
+          rake -T
+          echo "✅ Rakefile OK"

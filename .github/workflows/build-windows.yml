@@ -1,0 +1,65 @@
+name: Build Windows GTK3 Binary Gems
+
+on:
+  workflow_dispatch:  # Manual trigger
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  build-windows:
+    name: Build gems on Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3.0'
+          bundler-cache: true
+
+      - name: Install MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gtk3
+            mingw-w64-x86_64-toolchain
+
+      - name: Extract GTK3 vendor libraries
+        shell: msys2 {0}
+        run: |
+          echo "Extracting GTK3 libraries from MSYS2..."
+          mkdir -p vendor/windows/x64/bin
+          mkdir -p vendor/windows/x64/share
+
+          # Copy GTK3 DLLs (this will be replaced by scripts/download-gtk3-libs.sh)
+          echo "TODO: Implement DLL extraction script"
+          echo "For now, listing available GTK3 libraries:"
+          ls -lh /mingw64/bin/libgtk*.dll || true
+          ls -lh /mingw64/bin/libglib*.dll || true
+
+      - name: Show repository status
+        run: |
+          ruby --version
+          gem --version
+          bundle --version
+          rake status
+
+      - name: Run tests (when implemented)
+        run: |
+          echo "Tests not yet implemented"
+          # rake test:quick
+
+      - name: Upload build artifacts (when gems are built)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gems-windows-x64
+          path: pkg/*.gem
+          retention-days: 90
+          if-no-files-found: warn

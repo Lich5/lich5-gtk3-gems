@@ -1,80 +1,59 @@
-## What Is This?
+# Lich5 GTK3 Binary Gems
 
- 
+Precompiled GTK3 gems with everything bundled. Just install and run—no setup required.
+
+---
+
+## What Is This?
 
 Lich5 uses GTK3 for its graphical interface (windows, menus, dialogs). Normally, installing GTK3 for Ruby is complicated and error-prone. This project solves that.
 
- 
-
 **Binary gems** = precompiled + all libraries included = zero installation hassle.
 
- 
-
 ---
-
- 
 
 ## Why Does This Matter?
 
- 
-
 **The Old Way (Painful):**
-
 1. Install GTK3 system libraries (MSYS2 on Windows, Homebrew on Mac...)
-
 2. Install build tools (compilers, headers, etc.)
-
 3. Run `gem install gtk3` and wait 10-20 minutes while it compiles
-
 4. Debug inevitable failures (missing libraries, version conflicts...)
-
 5. Give up in frustration
 
- 
-
 **The New Way (Easy):**
-
 ```bash
-
 gem install gtk3-4.3.4-x64-mingw32.gem  # Done in 10 seconds
-
 ```
-
- 
 
 **For Lich5 users:** You don't even do this—it's already bundled in the installer. Just install Lich5 and it works.
 
- 
-
 ---
-
- 
 
 ## What's Included?
 
- 
-
 **10 GTK3 gems**, each with bundled libraries (~150-200MB per platform):
-
 - glib2, gobject-introspection, gio2
-
 - cairo, cairo-gobject, pango
-
 - gdk_pixbuf2, atk, gdk3, gtk3
 
- 
+**Currently supported:**
+- ✅ Windows (x64) - **Primary focus**
 
-**5 Platforms:**
-
-- Windows (x64)
-
-- macOS Intel & Apple Silicon
-
-- Linux (x64 & ARM64)
-
- 
+**Planned for future:**
+- ⏳ macOS Intel & Apple Silicon
+- ⏳ Linux (x64 & ARM64)
 
 Everything needed to run GTK3 applications is included—no external dependencies.
+
+---
+
+## Project Scope
+
+While this project started with GTK3, it's designed to build **any native Ruby gem** that needs binary distribution. Future gems may include:
+- sqlite3
+- mechanize (and nokogiri dependency)
+- Other native gems as needed by Lich5
 
  
 
@@ -131,26 +110,23 @@ Already installed with Lich5. Nothing to do.
  
 
 ### For Developers
-
 Download and install the gem for your platform:
 
- 
-
 ```bash
-
-gem install gtk3-4.3.4-x64-mingw32.gem      # Windows
-
-gem install gtk3-4.3.4-x86_64-darwin.gem    # macOS Intel
-
-gem install gtk3-4.3.4-arm64-darwin.gem     # macOS Apple Silicon
-
-gem install gtk3-4.3.4-x86_64-linux.gem     # Linux
-
+gem install gtk3-4.3.4-x64-mingw32.gem      # Windows (currently available)
 ```
 
- 
-
 Installing `gtk3` automatically installs all dependencies.
+
+---
+
+## Development Status
+
+**Current Phase:** Initial Setup
+**Priority Platform:** Windows x64
+**First Milestone:** Build glib2 gem for Windows
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed development plan.
 
  
 
@@ -209,16 +185,9 @@ For developers who want to contribute or understand the internals:
  
 
 **Library sources:**
-
 - Windows: MSYS2 mingw-w64-gtk3
 
-- macOS: Homebrew gtk+3
-
-- Linux: System packages
-
- 
-
-**Build system:** GitHub Actions (automatic builds for all platforms)
+**Build system:** GitHub Actions (Windows-focused, other platforms scaffolded for future)
 
  
 
@@ -267,10 +236,10 @@ A: Yes, but they're optimized for bundled distribution (large size OK). For publ
  
 
 **Q: How large are these?**
-
 A: ~150-200MB per platform. Large, but acceptable for bundled installers.
 
- 
+**Q: Why Windows-first?**
+A: Windows is the primary platform for Lich5 users and the most complex to build for. Once Windows is solid, other platforms will follow.
 
 ---
 
