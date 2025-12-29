@@ -40,7 +40,7 @@ describe 'GLib2' do
       begin
         original_path = ENV['PATH']
         # Force reload to test PATH setup
-        load File.join(glib2_dir, 'lib', 'glib2.rb')
+        load File.join(GLIB2_DIR, 'lib', 'glib2.rb')
 
         if Dir.exist?(vendor_bin)
           assert ENV['PATH'].include?(vendor_bin), 'vendor/bin should be in PATH'
