@@ -305,11 +305,11 @@ namespace :build do
         )
       end
 
-      # Add vendor files to includes
-      unless modified_gemspec.include?("vendor")
+      # Add .so files and vendor files to includes
+      unless modified_gemspec.include?("*.so")
         modified_gemspec.gsub!(
           /^(\s*s\.files\s*\+=\s*Dir\.glob\("test\/\*\*\/\*"\))$/,
-          "\\1\n  s.files += Dir.glob('lib/**/vendor/**/*')"
+          "\\1\n  s.files += Dir.glob('lib/**/*.so')\n  s.files += Dir.glob('lib/**/vendor/**/*')"
         )
       end
 
