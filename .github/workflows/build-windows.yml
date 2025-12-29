@@ -198,9 +198,8 @@ jobs:
 
       - name: Build consolidated x64 gem (multi-Ruby)
         run: |
-          cd gems/glib2
-          # Remove extension building since we have precompiled .so files
-          bundle exec ruby -I../../ -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('glib2')"
+          # Load Rakefile from root directory and build gem
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('glib2')"
         env:
           BINARY_GEM: 'true'
 
