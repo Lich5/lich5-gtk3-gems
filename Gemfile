@@ -5,6 +5,8 @@ source 'https://rubygems.org'
 ruby '>= 3.3.0'
 
 gem 'rake', '>= 13.0'
+gem 'pkg-config', '>= 1.5.0'              # Required by mkmf-gnome.rb
+gem 'native-package-installer', '>= 1.1' # Required by mkmf-gnome.rb
 
 group :development do
   gem 'rubocop', require: false
