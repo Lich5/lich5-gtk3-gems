@@ -57,7 +57,7 @@ jobs:
 
       - name: Build glib2 binary gem (x64)
         run: |
-          ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('glib2')"
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('glib2')"
         env:
           BINARY_GEM: 'true'
 
@@ -132,7 +132,7 @@ jobs:
         run: |
           # Note: This would need to target x86-mingw32 platform
           # Currently building as x64-mingw32 as Ruby setup doesn't support x86
-          ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('glib2')"
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('glib2')"
         env:
           BINARY_GEM: 'true'
 
