@@ -355,6 +355,10 @@ namespace :build do
     # Call the deterministic DLL extraction script
     script_path = File.expand_path('../scripts/extract-dll-dependencies.rb', __FILE__)
 
+    puts "  2a. Extracting DLL dependencies deterministically..."
+    puts "      Script: #{script_path}"
+    puts "      Exists: #{File.exist?(script_path)}"
+
     unless File.exist?(script_path)
       puts "  ⚠️  WARNING: DLL extraction script not found at #{script_path}"
       puts "     Skipping deterministic DLL extraction"
@@ -363,9 +367,14 @@ namespace :build do
 
     # Run the extraction script from the gem directory
     cmd = "ruby #{script_path} #{gem_name} #{architecture}"
-    puts "    Running: #{cmd}"
+    puts "      Command: #{cmd}"
+    puts "      Current directory: #{Dir.pwd}"
+    puts "      Environment: MSYSTEM=#{ENV['MSYSTEM'].inspect}, MINGW_PREFIX=#{ENV['MINGW_PREFIX'].inspect}, MSYSTEM_PREFIX=#{ENV['MSYSTEM_PREFIX'].inspect}"
 
-    unless system(cmd)
+    result = system(cmd)
+    puts "      Result: #{result ? 'SUCCESS' : 'FAILED (exit code: ' + $?.exitstatus.to_s + ')'}"
+
+    unless result
       puts "  ⚠️  WARNING: DLL extraction script failed"
       puts "     This may result in missing DLL dependencies"
     end
