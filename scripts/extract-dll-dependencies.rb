@@ -164,7 +164,17 @@ class DLLDependencyExtractor
       end
     end
 
+    puts "    Running: #{objdump_cmd} -p #{so_file}"
     output = `#{objdump_cmd} -p "#{so_file}" 2>/dev/null`
+
+    if output.empty?
+      puts "    ⚠️  objdump returned empty output"
+      return []
+    end
+
+    puts "    Raw objdump output (first 20 lines):"
+    output.lines.first(20).each { |line| puts "      #{line.rstrip}" }
+    puts "    ..." if output.lines.count > 20
 
     # Extract DLL names from objdump output
     # Lines like: DLL Name: msvcrt.dll
