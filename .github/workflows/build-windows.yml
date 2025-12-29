@@ -228,13 +228,19 @@ jobs:
 
       - name: List built gems
         run: |
-          if (Test-Path pkg) { dir pkg/ } else { echo "No pkg directory" }
+          if (Test-Path pkg) {
+            echo "Contents of pkg directory:"
+            dir pkg/
+          } else {
+            echo "ERROR: No pkg directory found!"
+            exit 1
+          }
 
       - name: Upload consolidated gem (x64)
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: glib2-x64-mingw32-multiruby
-          path: pkg/glib2-*.gem
+          path: pkg/
           retention-days: 90
-          if-no-files-found: warn
+          if-no-files-found: error
