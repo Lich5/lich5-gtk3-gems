@@ -353,7 +353,7 @@ namespace :build do
     architecture = ENV['PLATFORM'] || (ENV['MSYSTEM'] == 'MINGW32' ? 'x86' : 'x64')
 
     # Call the deterministic DLL extraction script
-    script_path = File.expand_path('../../scripts/extract-dll-dependencies.rb', __FILE__)
+    script_path = File.expand_path('../scripts/extract-dll-dependencies.rb', __FILE__)
 
     unless File.exist?(script_path)
       puts "  ⚠️  WARNING: DLL extraction script not found at #{script_path}"
