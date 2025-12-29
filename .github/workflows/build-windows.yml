@@ -226,17 +226,15 @@ jobs:
           # Consolidate precompiled extensions into final gem (no compilation)
           bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:consolidate_gem'].invoke('glib2')"
 
-      - name: Copy gem to output
+      - name: List built gems
         run: |
-          if (!(Test-Path pkg)) { mkdir pkg }
-          move gems/glib2/pkg/glib2-*.gem pkg/ -ErrorAction SilentlyContinue
-          dir pkg/
+          if (Test-Path pkg) { dir pkg/ } else { echo "No pkg directory" }
 
       - name: Upload consolidated gem (x64)
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: glib2-x64-mingw32-multiruby
-          path: pkg/glib2-*-x64-mingw32.gem
+          path: pkg/glib2-*.gem
           retention-days: 90
           if-no-files-found: warn
