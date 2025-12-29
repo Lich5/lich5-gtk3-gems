@@ -228,11 +228,21 @@ jobs:
 
       - name: List built gems
         run: |
+          echo "=== Checking for pkg directory ==="
           if (Test-Path pkg) {
-            echo "Contents of pkg directory:"
-            dir pkg/
+            echo "✓ pkg directory exists"
+            echo ""
+            echo "=== Contents of pkg directory ==="
+            Get-ChildItem -Path pkg -Recurse -Force | ForEach-Object {
+              $type = if ($_.PSIsContainer) { "DIR" } else { "FILE" }
+              $size = if ($_.PSIsContainer) { "" } else { $_.Length }
+              "{0,-6} {1,-30} {2}" -f $type, $_.Name, $size
+            }
+            echo ""
+            echo "=== Detailed file info ==="
+            Get-ChildItem -Path pkg -Force | Select-Object -Property FullName, Length, PSIsContainer, Mode
           } else {
-            echo "ERROR: No pkg directory found!"
+            echo "❌ ERROR: No pkg directory found!"
             exit 1
           }
 
