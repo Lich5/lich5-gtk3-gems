@@ -227,7 +227,7 @@ namespace :build do
       Dir.chdir(gem_dir)
 
       # Step 1: Compile native extension
-      puts "  1. Compiling native extension for Ruby #{current_ruby}..."
+      puts "  1. Compiling native extension for Ruby #{current_ruby_dot}..."
       system("ruby extconf.rb") unless File.exist?("Makefile")
       unless File.exist?("Makefile")
         puts "❌ Failed to generate Makefile"
@@ -254,7 +254,7 @@ namespace :build do
       puts "  ✅ Compiled extension copied to lib/#{gem_name}/#{current_ruby_dot}/ as #{gem_name}.so"
 
       # Step 3: Modify gemspec for binary platform and Ruby version
-      puts "  2. Preparing gemspec for Windows binary (Ruby #{current_ruby})..."
+      puts "  2. Preparing gemspec for Windows binary (Ruby #{current_ruby_dot})..."
       gemspec_path = "#{gem_name}.gemspec"
       gemspec_content = File.read(gemspec_path)
 
@@ -313,7 +313,7 @@ namespace :build do
       # Don't remove lib_dir - versioned .so files stay for multi-Ruby gem
 
       puts "✅ Built: pkg/#{File.basename(built_gem)}"
-      puts "   (Ruby #{current_ruby} .so included for multi-Ruby support)"
+      puts "   (Ruby #{current_ruby_dot} .so included for multi-Ruby support)"
 
     ensure
       Dir.chdir(original_dir)
