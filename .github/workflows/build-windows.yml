@@ -37,34 +37,6 @@ jobs:
             mingw-w64-x86_64-toolchain
             pkg-config
 
-      - name: Extract GTK3 vendor libraries (x64)
-        shell: msys2 {0}
-        run: |
-          echo "Extracting GTK3 libraries from MSYS2 (x64)..."
-          mkdir -p vendor/windows/x64/bin
-          mkdir -p vendor/windows/x64/share
-
-          # Copy GTK3 and GLib DLLs to vendor
-          echo "Copying GLib2 DLLs..."
-          cp /mingw64/bin/libglib-2.0-0.dll vendor/windows/x64/bin/ || true
-          cp /mingw64/bin/libgobject-2.0-0.dll vendor/windows/x64/bin/ || true
-          cp /mingw64/bin/libgio-2.0-0.dll vendor/windows/x64/bin/ || true
-
-          # Copy dependencies
-          cp /mingw64/bin/libintl-8.dll vendor/windows/x64/bin/ || true
-          cp /mingw64/bin/libiconv-2.dll vendor/windows/x64/bin/ || true
-          cp /mingw64/bin/libpcre2-8-0.dll vendor/windows/x64/bin/ || true
-
-          ls -lh vendor/windows/x64/bin/ || echo "Vendor bin directory is empty"
-
-      - name: Copy vendor libraries into gem (x64)
-        shell: msys2 {0}
-        run: |
-          echo "Copying vendor libraries into gem structure..."
-          mkdir -p gems/glib2/lib/glib2/vendor/bin
-          cp vendor/windows/x64/bin/*.dll gems/glib2/lib/glib2/vendor/bin/ || true
-          ls -lh gems/glib2/lib/glib2/vendor/bin/ || echo "No DLLs copied"
-
       - name: Build glib2 binary gem (x64)
         shell: msys2 {0}
         run: |
@@ -123,41 +95,13 @@ jobs:
             mingw-w64-i686-toolchain
             pkg-config
 
-      - name: Extract GTK3 vendor libraries (x86)
+      - name: Build glib2 binary gem (x86)
         shell: msys2 {0}
         run: |
-          echo "Extracting GTK3 libraries from MSYS2 (x86)..."
-          mkdir -p vendor/windows/x86/bin
-          mkdir -p vendor/windows/x86/share
-
-          # Copy GTK3 and GLib DLLs to vendor
-          echo "Copying GLib2 DLLs (x86)..."
-          cp /mingw32/bin/libglib-2.0-0.dll vendor/windows/x86/bin/ || true
-          cp /mingw32/bin/libgobject-2.0-0.dll vendor/windows/x86/bin/ || true
-          cp /mingw32/bin/libgio-2.0-0.dll vendor/windows/x86/bin/ || true
-
-          # Copy dependencies
-          cp /mingw32/bin/libintl-8.dll vendor/windows/x86/bin/ || true
-          cp /mingw32/bin/libiconv-2.dll vendor/windows/x86/bin/ || true
-          cp /mingw32/bin/libpcre2-8-0.dll vendor/windows/x86/bin/ || true
-
-          ls -lh vendor/windows/x86/bin/ || echo "Vendor bin directory is empty"
-
-      - name: Copy vendor libraries into gem (x86)
-        shell: msys2 {0}
-        run: |
-          echo "Copying vendor libraries into gem structure..."
-          mkdir -p gems/glib2/lib/glib2/vendor/bin
-          cp vendor/windows/x86/bin/*.dll gems/glib2/lib/glib2/vendor/bin/ || true
-          ls -lh gems/glib2/lib/glib2/vendor/bin/ || echo "No DLLs copied"
-
-      - name: Build glib2 binary gem (x86) - x86-mingw32 platform
-        run: |
-          # Note: This would need to target x86-mingw32 platform
-          # Currently building as x64-mingw32 as Ruby setup doesn't support x86
           bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('glib2')"
         env:
           BINARY_GEM: 'true'
+          MSYSTEM: 'MINGW32'
 
       - name: Show repository status
         run: |

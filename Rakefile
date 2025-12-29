@@ -277,6 +277,10 @@ namespace :build do
       FileUtils.cp(so_file, versioned_so)
       puts "  ✅ Compiled extension copied to lib/#{gem_name}/#{current_ruby_dot}/ as #{gem_name}.so"
 
+      # Step 2a: Extract DLL dependencies deterministically
+      puts "  2a. Extracting DLL dependencies deterministically..."
+      detect_and_copy_dll_dependencies(gem_name, versioned_so)
+
       # Step 3: Modify gemspec for binary platform and Ruby version
       puts "  2. Preparing gemspec for Windows binary (Ruby #{current_ruby_dot})..."
       gemspec_path = "#{gem_name}.gemspec"
@@ -341,6 +345,29 @@ namespace :build do
 
     ensure
       Dir.chdir(original_dir)
+    end
+  end
+
+  def detect_and_copy_dll_dependencies(gem_name, so_file)
+    # Determine architecture from environment
+    architecture = ENV['PLATFORM'] || (ENV['MSYSTEM'] == 'MINGW32' ? 'x86' : 'x64')
+
+    # Call the deterministic DLL extraction script
+    script_path = File.expand_path('../../scripts/extract-dll-dependencies.rb', __FILE__)
+
+    unless File.exist?(script_path)
+      puts "  ⚠️  WARNING: DLL extraction script not found at #{script_path}"
+      puts "     Skipping deterministic DLL extraction"
+      return
+    end
+
+    # Run the extraction script from the gem directory
+    cmd = "ruby #{script_path} #{gem_name} #{architecture}"
+    puts "    Running: #{cmd}"
+
+    unless system(cmd)
+      puts "  ⚠️  WARNING: DLL extraction script failed"
+      puts "     This may result in missing DLL dependencies"
     end
   end
 
