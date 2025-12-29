@@ -224,8 +224,8 @@ jobs:
 
       - name: Copy gem to output
         run: |
-          mkdir -p pkg
-          move gems/glib2/pkg/glib2-*.gem pkg/ || echo "No gem produced"
+          if (!(Test-Path pkg)) { mkdir pkg }
+          move gems/glib2/pkg/glib2-*.gem pkg/ -ErrorAction SilentlyContinue
           dir pkg/
 
       - name: Upload consolidated gem (x64)
