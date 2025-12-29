@@ -150,14 +150,21 @@ class DLLDependencyExtractor
     # Use objdump to find all imported DLLs
     # objdump -p shows imports, grep for DLL names
 
-    unless system('objdump --version > /dev/null 2>&1')
-      puts "⚠️  WARNING: objdump not found in PATH"
-      puts "   Cannot perform DLL dependency analysis"
-      puts "   Falling back to no DLL bundling"
-      return []
+    # Try to find objdump - first check full path in MSYS2 bin, then PATH
+    objdump_cmd = "#{@msys2_bin}/objdump"
+    unless File.exist?("#{objdump_cmd}.exe") || system("#{objdump_cmd} --version > /dev/null 2>&1")
+      # Fall back to PATH
+      objdump_cmd = 'objdump'
+      unless system("#{objdump_cmd} --version > /dev/null 2>&1")
+        puts "⚠️  WARNING: objdump not found in PATH or MSYS2 bin"
+        puts "   MSYS2 Bin: #{@msys2_bin}"
+        puts "   Cannot perform DLL dependency analysis"
+        puts "   Falling back to no DLL bundling"
+        return []
+      end
     end
 
-    output = `objdump -p "#{so_file}" 2>/dev/null`
+    output = `#{objdump_cmd} -p "#{so_file}" 2>/dev/null`
 
     # Extract DLL names from objdump output
     # Lines like: DLL Name: msvcrt.dll
