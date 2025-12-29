@@ -26,7 +26,15 @@ class DLLDependencyExtractor
     @gem_name = gem_name
     @architecture = architecture
     @msys2_root = msys2_root || detect_msys2_root
-    @msys2_bin = File.join(@msys2_root, architecture_to_msys2_path, 'bin')
+
+    # Construct the bin path
+    # If root is already mingw64/mingw32 (from MINGW_PREFIX), use /bin directly
+    # Otherwise, append architecture path (mingw64/mingw32) then /bin
+    if @msys2_root.end_with?('mingw64') || @msys2_root.end_with?('mingw32')
+      @msys2_bin = File.join(@msys2_root, 'bin')
+    else
+      @msys2_bin = File.join(@msys2_root, architecture_to_msys2_path, 'bin')
+    end
 
     puts "DLL Extraction Configuration:"
     puts "  Gem: #{@gem_name}"
@@ -68,20 +76,36 @@ class DLLDependencyExtractor
   private
 
   def detect_msys2_root
+    # In GitHub Actions MSYS2, MINGW_PREFIX points directly to mingw64/mingw32
+    # We need the parent directory (MSYSTEM_PREFIX or the root)
+
+    # Try to detect from MSYSTEM_PREFIX first (the MSYS2 root)
+    if ENV['MSYSTEM_PREFIX']
+      return ENV['MSYSTEM_PREFIX'] if Dir.exist?(ENV['MSYSTEM_PREFIX'])
+    end
+
+    # If MINGW_PREFIX is set (e.g., /mingw64), use it directly
+    # In MSYS2, the bin directory is mingw64/bin or mingw32/bin
+    if ENV['MINGW_PREFIX']
+      # MINGW_PREFIX is like /mingw64 or /mingw32
+      # This is where the toolchain DLLs are located
+      return ENV['MINGW_PREFIX']
+    end
+
     # Try common MSYS2 installation paths
     possible_roots = [
       'C:/msys64',
       '/c/msys64',
-      ENV['MSYSTEM_PREFIX'],
-      ENV['MINGW_PREFIX']&.sub(%r{/mingw(?:32|64)$}, ''),
+      '/msys64',  # MSYS2 can also be at root in some Docker/Actions setups
     ].compact
 
     root = possible_roots.find { |path| Dir.exist?(path) }
 
     unless root
       puts "❌ ERROR: Could not detect MSYS2 installation"
-      puts "   Tried: #{possible_roots.join(', ')}"
-      puts "   Set MSYS2_ROOT environment variable explicitly"
+      puts "   Environment: MSYSTEM_PREFIX=#{ENV['MSYSTEM_PREFIX'].inspect}, MINGW_PREFIX=#{ENV['MINGW_PREFIX'].inspect}"
+      puts "   Tried paths: #{possible_roots.join(', ')}"
+      puts "   Set MSYSTEM_PREFIX or MINGW_PREFIX environment variable explicitly"
       exit 1
     end
 
