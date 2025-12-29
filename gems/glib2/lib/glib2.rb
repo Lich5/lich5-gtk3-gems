@@ -55,11 +55,11 @@ if Gem.win_platform?
 end
 
 # Load the correct precompiled extension for this Ruby version
-# Binary gem structure: lib/glib2/{major}{minor}/glib2.so
+# Binary gem structure: lib/glib2/{major}.{minor}/glib2.so
 # Falls back to generic glib2.so for source builds
 begin
   major, minor, _ = RUBY_VERSION.split(/\./)
-  require "glib2/#{major}#{minor}/glib2.so"
+  require "glib2/#{major}.#{minor}/glib2.so"
 rescue LoadError
   require 'glib2.so'
 end
