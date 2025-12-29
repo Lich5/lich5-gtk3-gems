@@ -431,6 +431,14 @@ namespace :build do
         exit 1
       end
       built_gem = gem_files.last
+
+      # Verify it's actually a file, not a directory
+      unless File.file?(built_gem)
+        puts "❌ Built gem is not a file: #{built_gem}"
+        puts "   Is it a directory? #{File.directory?(built_gem)}"
+        exit 1
+      end
+
       FileUtils.mv(built_gem, "#{original_dir}/#{PKG_DIR}/")
 
       # Cleanup (keep lib_dir with precompiled .so files)
