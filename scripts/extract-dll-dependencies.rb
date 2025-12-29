@@ -150,29 +150,58 @@ class DLLDependencyExtractor
     # Use objdump to find all imported DLLs
     # objdump -p shows imports, grep for DLL names
 
-    # Try to find objdump - first check full path in MSYS2 bin, then PATH
-    objdump_cmd = "#{@msys2_bin}/objdump"
-    unless File.exist?("#{objdump_cmd}.exe") || system("#{objdump_cmd} --version > /dev/null 2>&1")
-      # Fall back to PATH
-      objdump_cmd = 'objdump'
-      unless system("#{objdump_cmd} --version > /dev/null 2>&1")
-        puts "⚠️  WARNING: objdump not found in PATH or MSYS2 bin"
-        puts "   MSYS2 Bin: #{@msys2_bin}"
-        puts "   Cannot perform DLL dependency analysis"
-        puts "   Falling back to no DLL bundling"
-        return []
+    puts "    Locating objdump..."
+
+    # Try to find objdump - be explicit about what we're checking
+    objdump_candidates = [
+      "#{@msys2_bin}/objdump",           # Full path in MSYS2 bin
+      "#{@msys2_bin}/objdump.exe",       # Windows executable
+      "objdump",                          # In system PATH
+    ]
+
+    objdump_cmd = nil
+    objdump_candidates.each do |candidate|
+      # Check if file exists
+      if File.exist?(candidate)
+        objdump_cmd = candidate
+        puts "    ✓ Found objdump at: #{candidate}"
+        break
+      end
+
+      # Try running it (in case PATH has it but File.exist? fails)
+      if system("#{candidate} --version > /dev/null 2>&1")
+        objdump_cmd = candidate
+        puts "    ✓ Found objdump in PATH: #{candidate}"
+        break
       end
     end
 
+    unless objdump_cmd
+      puts "    ⚠️  WARNING: objdump not found"
+      puts "       Tried: #{objdump_candidates.inspect}"
+      puts "       MSYS2 Bin: #{@msys2_bin}"
+      puts "       Cannot perform DLL dependency analysis"
+      puts "       Falling back to no DLL bundling"
+      return []
+    end
+
     puts "    Running: #{objdump_cmd} -p #{so_file}"
-    output = `#{objdump_cmd} -p "#{so_file}" 2>/dev/null`
+    output = `#{objdump_cmd} -p "#{so_file}" 2>&1`
+    exit_status = $?.exitstatus
+
+    if exit_status != 0
+      puts "    ⚠️  objdump exited with status #{exit_status}"
+      puts "    Output: #{output.lines.first(5).join}"
+      return []
+    end
 
     if output.empty?
       puts "    ⚠️  objdump returned empty output"
       return []
     end
 
-    puts "    Raw objdump output (first 20 lines):"
+    puts "    ✓ Objdump output received (#{output.lines.count} lines)"
+    puts "    Raw output (first 20 lines):"
     output.lines.first(20).each { |line| puts "      #{line.rstrip}" }
     puts "    ..." if output.lines.count > 20
 
