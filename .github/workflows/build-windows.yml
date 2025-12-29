@@ -33,7 +33,9 @@ jobs:
           update: true
           install: >-
             mingw-w64-x86_64-gtk3
+            mingw-w64-x86_64-glib2
             mingw-w64-x86_64-toolchain
+            pkg-config
 
       - name: Extract GTK3 vendor libraries (x64)
         shell: msys2 {0}
@@ -56,6 +58,7 @@ jobs:
           ls -lh vendor/windows/x64/bin/ || echo "Vendor bin directory is empty"
 
       - name: Build glib2 binary gem (x64)
+        shell: msys2 {0}
         run: |
           bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('glib2')"
         env:
@@ -106,7 +109,9 @@ jobs:
           update: true
           install: >-
             mingw-w64-i686-gtk3
+            mingw-w64-i686-glib2
             mingw-w64-i686-toolchain
+            pkg-config
 
       - name: Extract GTK3 vendor libraries (x86)
         shell: msys2 {0}
@@ -129,6 +134,7 @@ jobs:
           ls -lh vendor/windows/x86/bin/ || echo "Vendor bin directory is empty"
 
       - name: Build glib2 binary gem (x86) - x86-mingw32 platform
+        shell: msys2 {0}
         run: |
           # Note: This would need to target x86-mingw32 platform
           # Currently building as x64-mingw32 as Ruby setup doesn't support x86
