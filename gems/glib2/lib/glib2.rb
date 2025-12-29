@@ -36,7 +36,9 @@ end
 # Load the correct precompiled extension for this Ruby version
 # Binary gem includes .so files for Ruby 3.3, 3.4, and 4.0
 if defined?(RUBY_ENGINE) && RUBY_ENGINE == 'cruby'
-  ruby_version = "#{RUBY_VERSION.major}#{RUBY_VERSION.minor}"
+  # RUBY_VERSION is a string like "3.4.8", parse it for version numbers
+  ruby_parts = RUBY_VERSION.split('.')
+  ruby_version = "#{ruby_parts[0]}#{ruby_parts[1]}"
   glib2_dir = File.join(__dir__, 'glib2')
 
   # Try to load version-specific .so
