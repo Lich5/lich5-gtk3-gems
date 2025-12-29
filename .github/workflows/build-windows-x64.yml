@@ -102,8 +102,11 @@ jobs:
             echo "✓ gems/glib2/lib/glib2 directory exists"
             echo ""
             echo "=== Contents of gems/glib2/lib/glib2 ==="
+            $basePath = (Get-Item gems/glib2/lib/glib2).FullName
+            $baseDepth = ($basePath -split '\\').Count
             Get-ChildItem -Path gems/glib2/lib/glib2 -Force -Recurse | ForEach-Object {
-              $depth = ($_.FullName -split '\\').Count - (Get-Item gems/glib2/lib/glib2 | Select-Object -ExpandProperty FullName -split '\\').Count
+              $itemDepth = ($_.FullName -split '\\').Count
+              $depth = $itemDepth - $baseDepth
               $indent = "  " * $depth
               $type = if ($_.PSIsContainer) { "[DIR]" } else { "[FILE]" }
               $size = if ($_.PSIsContainer) { "" } else { "$($_.Length) bytes" }
