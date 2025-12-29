@@ -351,7 +351,7 @@ namespace :build do
     begin
       Dir.chdir(gem_dir)
 
-      # Step 1: Verify precompiled .so files exist
+      # Step 1: Verify precompiled .so files and vendor DLLs exist
       puts "  1. Verifying precompiled extensions exist..."
       lib_dir = File.join("lib", gem_name)
       so_files = Dir.glob("#{lib_dir}/*/#{gem_name}.so")
@@ -365,6 +365,17 @@ namespace :build do
 
       puts "  ✅ Found #{so_files.count} precompiled extension(s):"
       so_files.each { |f| puts "     - #{f}" }
+
+      # Check for vendor DLLs
+      vendor_dir = File.join("lib", gem_name, "vendor", "bin")
+      dll_files = Dir.glob("#{vendor_dir}/*.dll")
+      if dll_files.empty?
+        puts "  ⚠️  No vendor DLLs found in #{vendor_dir}/"
+        puts "     The gem will not have bundled dependencies"
+      else
+        puts "  ✅ Found #{dll_files.count} vendor DLL(s):"
+        dll_files.each { |f| puts "     - #{File.basename(f)}" }
+      end
 
       # Step 2: Modify gemspec for binary platform (don't compile)
       puts "  2. Preparing gemspec for binary gem (no compilation)..."
