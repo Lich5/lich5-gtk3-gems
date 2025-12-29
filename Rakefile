@@ -382,20 +382,44 @@ namespace :build do
 
   def consolidate_precompiled_gem(gem_name, gem_dir)
     puts "Consolidating #{gem_name} from precompiled extensions..."
+    puts "  Current directory: #{Dir.pwd}"
+    puts "  Gem directory: #{gem_dir}"
+    puts ""
 
     original_dir = Dir.pwd
     begin
       Dir.chdir(gem_dir)
+      puts "  Changed to gem directory: #{Dir.pwd}"
 
       # Step 1: Verify precompiled .so files and vendor DLLs exist
       puts "  1. Verifying precompiled extensions exist..."
       lib_dir = File.join("lib", gem_name)
+
+      # Debug: Show what files actually exist in lib/
+      puts "     Checking for lib/#{gem_name}/ directory..."
+      if Dir.exist?(lib_dir)
+        puts "     ✓ Directory exists"
+        puts "     Contents:"
+        Dir.glob("#{lib_dir}/*").each do |item|
+          if File.directory?(item)
+            puts "       [DIR]  #{File.basename(item)}"
+          else
+            puts "       [FILE] #{File.basename(item)}"
+          end
+        end
+      else
+        puts "     ✗ Directory does not exist!"
+      end
+
       so_files = Dir.glob("#{lib_dir}/*/#{gem_name}.so")
 
       if so_files.empty?
         puts "❌ No precompiled .so files found in #{lib_dir}/"
         puts "   Expected structure: #{lib_dir}/{major}.{minor}/#{gem_name}.so"
         puts "   (e.g., #{lib_dir}/3.3/#{gem_name}.so, #{lib_dir}/3.4/#{gem_name}.so)"
+        puts ""
+        puts "   DEBUG: Files in #{lib_dir}:"
+        Dir.glob("#{lib_dir}/**/*").each { |f| puts "     - #{f}" }
         exit 1
       end
 
@@ -404,13 +428,21 @@ namespace :build do
 
       # Check for vendor DLLs
       vendor_dir = File.join("lib", gem_name, "vendor", "bin")
-      dll_files = Dir.glob("#{vendor_dir}/*.dll")
-      if dll_files.empty?
-        puts "  ⚠️  No vendor DLLs found in #{vendor_dir}/"
-        puts "     The gem will not have bundled dependencies"
+      puts "     Checking for vendor DLLs in #{vendor_dir}/"
+      if Dir.exist?(vendor_dir)
+        puts "     ✓ Vendor directory exists"
+        dll_files = Dir.glob("#{vendor_dir}/*.dll")
+        if dll_files.empty?
+          puts "     ⚠️  WARNING: Vendor directory exists but contains no .dll files!"
+          puts "     This will cause LoadError 126 at runtime"
+        else
+          puts "  ✅ Found #{dll_files.count} vendor DLL(s):"
+          dll_files.each { |f| puts "     - #{File.basename(f)}" }
+        end
       else
-        puts "  ✅ Found #{dll_files.count} vendor DLL(s):"
-        dll_files.each { |f| puts "     - #{File.basename(f)}" }
+        puts "     ✗ Vendor directory NOT found!"
+        puts "  ⚠️  WARNING: The gem will not have bundled dependencies"
+        puts "     This will cause LoadError 126 at runtime"
       end
 
       # Step 2: Modify gemspec for binary platform (don't compile)
@@ -479,6 +511,32 @@ namespace :build do
 
       # Cleanup (keep lib_dir with precompiled .so files)
       FileUtils.rm(binary_gemspec)
+
+      # Verify gem contents (for debugging)
+      built_gem_path = "#{original_dir}/#{PKG_DIR}/#{File.basename(built_gem)}"
+      puts ""
+      puts "  Verifying gem contents..."
+      puts "     Gem file: #{built_gem_path}"
+      puts "     Gem size: #{File.size(built_gem_path)} bytes"
+
+      # List contents of the gem
+      require 'rubygems/package'
+      begin
+        Gem::Package.open(built_gem_path) do |pkg|
+          so_count = 0
+          dll_count = 0
+          pkg.each do |entry|
+            so_count += 1 if entry.full_name.include?('.so')
+            dll_count += 1 if entry.full_name.include?('.dll')
+          end
+          puts "     Contains: #{so_count} .so file(s), #{dll_count} .dll file(s)"
+          if dll_count == 0
+            puts "     ⚠️  WARNING: No DLL files in gem! This will cause LoadError 126"
+          end
+        end
+      rescue => e
+        puts "     ⚠️  Could not inspect gem: #{e.message}"
+      end
 
       puts "✅ Built: pkg/#{File.basename(built_gem)}"
       puts "   (Contains #{so_files.count} precompiled Ruby extension(s))"
