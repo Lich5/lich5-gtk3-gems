@@ -76,7 +76,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: glib2-extensions-x64
-          path: gems/glib2/lib/glib2/glib2-ruby*.so
+          path: gems/glib2/lib/glib2/*/glib2.so
           retention-days: 30
           if-no-files-found: warn
 
@@ -151,7 +151,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: glib2-extensions-x86
-          path: gems/glib2/lib/glib2/glib2-ruby*.so
+          path: gems/glib2/lib/glib2/*/glib2.so
           retention-days: 30
           if-no-files-found: warn
 
@@ -188,7 +188,7 @@ jobs:
         run: |
           cd gems/glib2
           # Remove extension building since we have precompiled .so files
-          ruby -I../../ -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('glib2')"
+          bundle exec ruby -I../../ -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('glib2')"
         env:
           BINARY_GEM: 'true'
 
