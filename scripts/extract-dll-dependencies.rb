@@ -238,32 +238,51 @@ class DLLDependencyExtractor
 
     puts "Copying DLLs to #{vendor_dir}..."
 
-    copied = 0
-    not_found = []
+    # Track all DLLs we need to copy (including transitive dependencies)
+    all_dlls_to_copy = Set.new(dll_names)
+    copied = Set.new
+    not_found = Set.new
 
-    dll_names.each do |dll_name|
-      src = File.join(@msys2_bin, dll_name)
+    # Copy DLLs and resolve transitive dependencies
+    to_process = dll_names.dup
+    max_iterations = 10  # Prevent infinite loops
+    iteration = 0
 
-      if File.exist?(src)
-        FileUtils.cp(src, vendor_dir)
-        puts "  ✓ #{dll_name}"
-        copied += 1
-      else
-        # Try alternative paths (some DLLs might be in different locations)
-        alt_path = find_dll_alternative(dll_name)
-        if alt_path
-          FileUtils.cp(alt_path, vendor_dir)
-          puts "  ✓ #{dll_name} (from #{alt_path})"
-          copied += 1
+    while to_process.any? && iteration < max_iterations
+      iteration += 1
+      puts "  Processing DLLs (iteration #{iteration})..." if iteration > 1
+
+      new_to_process = []
+
+      to_process.each do |dll_name|
+        next if copied.include?(dll_name)  # Already copied
+
+        src = find_dll_path(dll_name)
+
+        if src
+          FileUtils.cp(src, vendor_dir)
+          puts "  ✓ #{dll_name}"
+          copied.add(dll_name)
+
+          # Find dependencies of this DLL
+          deps = extract_dll_names_from_file(src)
+          deps.each do |dep|
+            unless copied.include?(dep) || all_dlls_to_copy.include?(dep)
+              all_dlls_to_copy.add(dep)
+              new_to_process.push(dep)
+            end
+          end
         else
-          not_found << dll_name
+          not_found.add(dll_name)
           puts "  ⚠️  #{dll_name} (not found)"
         end
       end
+
+      to_process = new_to_process
     end
 
     puts ""
-    puts "Copied: #{copied}/#{dll_names.count} DLLs"
+    puts "Copied: #{copied.count}/#{all_dlls_to_copy.count} DLLs (#{iteration} iterations)"
 
     if not_found.any?
       puts "⚠️  WARNING: Could not find #{not_found.count} DLL(s):"
@@ -274,19 +293,72 @@ class DLLDependencyExtractor
     end
   end
 
-  def find_dll_alternative(dll_name)
-    # Search for DLL in other common MSYS2 locations
+  def find_dll_path(dll_name)
+    # Try to find DLL in standard locations
     search_paths = [
-      File.join(@msys2_root, 'bin'),  # Root MSYS2 bin
-      File.join(@msys2_root, 'usr', 'bin'),
+      File.join(@msys2_bin, dll_name),           # Primary: MSYS2 bin
+      File.join(@msys2_bin, dll_name + ".exe"),  # With .exe extension
+      File.join(@msys2_root, 'bin', dll_name),   # Root MSYS2 bin
+      File.join(@msys2_root, 'usr', 'bin', dll_name),  # usr/bin
     ]
 
     search_paths.each do |path|
-      full_path = File.join(path, dll_name)
-      return full_path if File.exist?(full_path)
+      return path if File.exist?(path)
     end
 
     nil
+  end
+
+  def extract_dll_names_from_file(dll_path)
+    # Extract DLL dependencies from a file using objdump
+    # This handles transitive dependencies
+    begin
+      output = `#{find_objdump} -p "#{dll_path}" 2>&1`
+      return [] if output.empty?
+
+      # Extract DLL names from objdump output
+      dll_names = output.scan(/DLL Name: ([^\s]+)/i).flatten.map(&:strip).uniq
+
+      # Filter out system DLLs
+      excluded = %w[
+        kernel32.dll
+        ntdll.dll
+        msvcrt.dll
+        advapi32.dll
+        user32.dll
+        gdi32.dll
+        ole32.dll
+        oleaut32.dll
+        shell32.dll
+        comctl32.dll
+        comdlg32.dll
+        mpr.dll
+        winspool.dll
+        ws2_32.dll
+        wsock32.dll
+      ]
+
+      dll_names.reject { |dll| excluded.any? { |excl| dll.downcase == excl.downcase } }
+    rescue => e
+      # If objdump fails, return empty list
+      []
+    end
+  end
+
+  def find_objdump
+    # Find objdump command
+    candidates = [
+      "#{@msys2_bin}/objdump",
+      "#{@msys2_bin}/objdump.exe",
+      "objdump",
+    ]
+
+    candidates.each do |candidate|
+      return candidate if File.exist?(candidate)
+      return candidate if system("#{candidate} --version > /dev/null 2>&1")
+    end
+
+    "objdump"  # Fallback
   end
 end
 
