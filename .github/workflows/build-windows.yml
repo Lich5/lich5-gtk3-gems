@@ -57,6 +57,14 @@ jobs:
 
           ls -lh vendor/windows/x64/bin/ || echo "Vendor bin directory is empty"
 
+      - name: Copy vendor libraries into gem (x64)
+        shell: msys2 {0}
+        run: |
+          echo "Copying vendor libraries into gem structure..."
+          mkdir -p gems/glib2/lib/glib2/vendor/bin
+          cp vendor/windows/x64/bin/*.dll gems/glib2/lib/glib2/vendor/bin/ || true
+          ls -lh gems/glib2/lib/glib2/vendor/bin/ || echo "No DLLs copied"
+
       - name: Build glib2 binary gem (x64)
         shell: msys2 {0}
         run: |
@@ -132,6 +140,14 @@ jobs:
           cp /mingw32/bin/libpcre2-8-0.dll vendor/windows/x86/bin/ || true
 
           ls -lh vendor/windows/x86/bin/ || echo "Vendor bin directory is empty"
+
+      - name: Copy vendor libraries into gem (x86)
+        shell: msys2 {0}
+        run: |
+          echo "Copying vendor libraries into gem structure..."
+          mkdir -p gems/glib2/lib/glib2/vendor/bin
+          cp vendor/windows/x86/bin/*.dll gems/glib2/lib/glib2/vendor/bin/ || true
+          ls -lh gems/glib2/lib/glib2/vendor/bin/ || echo "No DLLs copied"
 
       - name: Build glib2 binary gem (x86) - x86-mingw32 platform
         shell: msys2 {0}
