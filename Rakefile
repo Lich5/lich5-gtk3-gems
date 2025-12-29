@@ -213,7 +213,8 @@ namespace :build do
     # RUBY_VERSION is a string like "3.4.8", parse it for version numbers
     ruby_parts = RUBY_VERSION.split('.')
     current_ruby = "#{ruby_parts[0]}#{ruby_parts[1]}"
-    puts "Building #{gem_name} (Windows binary gem for Ruby #{current_ruby})..."
+    current_ruby_dot = "#{ruby_parts[0]}.#{ruby_parts[1]}"
+    puts "Building #{gem_name} (Windows binary gem for Ruby #{current_ruby_dot})..."
 
     unless Gem.win_platform?
       puts "⚠️  Binary gem build can only run on Windows"
