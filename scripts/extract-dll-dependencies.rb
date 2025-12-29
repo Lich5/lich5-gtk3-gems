@@ -28,11 +28,21 @@ class DLLDependencyExtractor
     @msys2_root = msys2_root || detect_msys2_root
 
     # Construct the bin path
-    # If root is already mingw64/mingw32 (from MINGW_PREFIX), use /bin directly
-    # Otherwise, append architecture path (mingw64/mingw32) then /bin
-    if @msys2_root.end_with?('mingw64') || @msys2_root.end_with?('mingw32')
+    # MSYS2 has multiple environments: MINGW64, MINGW32, UCRT64, CLANG64, etc.
+    # If MINGW_PREFIX or MSYSTEM_PREFIX points to one of these directly (like /ucrt64),
+    # the DLLs are in root/bin. Otherwise, append the architecture subdirectory.
+
+    # Check if this looks like a direct MSYS2 environment path (not the MSYS2 root)
+    root_basename = File.basename(@msys2_root)
+    if %w[ucrt64 clang64 mingw64 mingw32].include?(root_basename)
+      # Direct environment path: /ucrt64, /clang64, /mingw64, /mingw32
+      @msys2_bin = File.join(@msys2_root, 'bin')
+    elsif @msys2_root.end_with?('mingw64') || @msys2_root.end_with?('mingw32')
+      # Path ends with architecture but is the full path
       @msys2_bin = File.join(@msys2_root, 'bin')
     else
+      # Traditional MSYS2 root: /c/msys64 or /msys64
+      # Need to append the architecture subdirectory
       @msys2_bin = File.join(@msys2_root, architecture_to_msys2_path, 'bin')
     end
 
