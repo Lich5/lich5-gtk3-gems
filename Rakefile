@@ -210,8 +210,11 @@ namespace :build do
   end
 
   def build_binary_gem(gem_name, gem_dir)
-    current_ruby = "#{RUBY_VERSION.major}.#{RUBY_VERSION.minor}"
-    puts "Building #{gem_name} (Windows binary gem for Ruby #{current_ruby})..."
+    # RUBY_VERSION is a string like "3.4.8", parse it for version numbers
+    ruby_parts = RUBY_VERSION.split('.')
+    current_ruby = "#{ruby_parts[0]}#{ruby_parts[1]}"
+    current_ruby_dot = "#{ruby_parts[0]}.#{ruby_parts[1]}"
+    puts "Building #{gem_name} (Windows binary gem for Ruby #{current_ruby_dot})..."
 
     unless Gem.win_platform?
       puts "⚠️  Binary gem build can only run on Windows"
@@ -242,14 +245,13 @@ namespace :build do
 
       # Step 2: Copy to lib/#{gem_name}/{major}.{minor}/ directory
       # Use version-specific directory structure like official ruby-gnome gems
-      ruby_version_dot = current_ruby.insert(1, '.')
-      lib_dir = File.join("lib", gem_name, ruby_version_dot)
+      lib_dir = File.join("lib", gem_name, current_ruby_dot)
       FileUtils.mkdir_p(lib_dir)
 
       # Always name the .so as "#{gem_name}.so", version selection happens via directory
       versioned_so = File.join(lib_dir, "#{gem_name}.so")
       FileUtils.cp(so_file, versioned_so)
-      puts "  ✅ Compiled extension copied to lib/#{gem_name}/#{ruby_version_dot}/ as #{gem_name}.so"
+      puts "  ✅ Compiled extension copied to lib/#{gem_name}/#{current_ruby_dot}/ as #{gem_name}.so"
 
       # Step 3: Modify gemspec for binary platform and Ruby version
       puts "  2. Preparing gemspec for Windows binary (Ruby #{current_ruby})..."
