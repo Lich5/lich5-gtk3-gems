@@ -188,6 +188,30 @@ namespace :build do
     end
   end
 
+  desc 'Consolidate precompiled extensions and build gem (no compilation)'
+  task :consolidate_gem, [:name] do |t, args|
+    gem_name = args[:name]
+
+    unless ALL_GEMS.include?(gem_name)
+      puts "❌ Unknown gem: #{gem_name}"
+      puts "Available gems: #{ALL_GEMS.join(', ')}"
+      exit 1
+    end
+
+    gem_dir = "#{GEMS_DIR}/#{gem_name}"
+    unless Dir.exist?(gem_dir)
+      puts "❌ Gem source not found: #{gem_dir}"
+      puts "Run: rake gems:setup"
+      exit 1
+    end
+
+    # Create pkg directory
+    FileUtils.mkdir_p(PKG_DIR)
+
+    # This task is for consolidating precompiled extensions, not compiling
+    consolidate_precompiled_gem(gem_name, gem_dir)
+  end
+
   private
 
   def build_source_gem(gem_name, gem_dir)
@@ -314,6 +338,95 @@ namespace :build do
 
       puts "✅ Built: pkg/#{File.basename(built_gem)}"
       puts "   (Ruby #{current_ruby_dot} .so included for multi-Ruby support)"
+
+    ensure
+      Dir.chdir(original_dir)
+    end
+  end
+
+  def consolidate_precompiled_gem(gem_name, gem_dir)
+    puts "Consolidating #{gem_name} from precompiled extensions..."
+
+    original_dir = Dir.pwd
+    begin
+      Dir.chdir(gem_dir)
+
+      # Step 1: Verify precompiled .so files exist
+      puts "  1. Verifying precompiled extensions exist..."
+      lib_dir = File.join("lib", gem_name)
+      so_files = Dir.glob("#{lib_dir}/*/#{gem_name}.so")
+
+      if so_files.empty?
+        puts "❌ No precompiled .so files found in #{lib_dir}/"
+        puts "   Expected structure: #{lib_dir}/{major}.{minor}/#{gem_name}.so"
+        puts "   (e.g., #{lib_dir}/3.3/#{gem_name}.so, #{lib_dir}/3.4/#{gem_name}.so)"
+        exit 1
+      end
+
+      puts "  ✅ Found #{so_files.count} precompiled extension(s):"
+      so_files.each { |f| puts "     - #{f}" }
+
+      # Step 2: Modify gemspec for binary platform (don't compile)
+      puts "  2. Preparing gemspec for binary gem (no compilation)..."
+      gemspec_path = "#{gem_name}.gemspec"
+      unless File.exist?(gemspec_path)
+        puts "❌ Gemspec not found: #{gemspec_path}"
+        exit 1
+      end
+
+      gemspec_content = File.read(gemspec_path)
+      modified_gemspec = gemspec_content.dup
+
+      # Remove extension building (we have precompiled .so files)
+      modified_gemspec.gsub!(/^\s*s\.extensions\s*=\s*\[.*?\]\s*$/m, '# Extensions precompiled')
+
+      # Add platform specification if not present
+      unless modified_gemspec.include?("s.platform")
+        modified_gemspec.gsub!(
+          /^(\s*s\.version\s*=.*?)$/,
+          "\\1\n  s.platform = Gem::Platform.new('x64-mingw32')"
+        )
+      end
+
+      # Mark as multi-Ruby binary (no required_ruby_version constraint)
+      unless modified_gemspec.include?("Multi-Ruby")
+        modified_gemspec.gsub!(
+          /^(\s*s\.platform.*?)$/,
+          "\\1\n  # Multi-Ruby: Binary supports Ruby 3.3, 3.4 (detected at runtime)"
+        )
+      end
+
+      # Add vendor files to includes if not present
+      unless modified_gemspec.include?("vendor")
+        modified_gemspec.gsub!(
+          /^(\s*s\.files\s*\+=\s*Dir\.glob\("test\/\*\*\/\*"\))$/,
+          "\\1\n  s.files += Dir.glob('lib/**/vendor/**/*')"
+        )
+      end
+
+      # Write modified gemspec temporarily
+      binary_gemspec = "#{gem_name}-binary.gemspec"
+      File.write(binary_gemspec, modified_gemspec)
+      puts "  ✅ Binary gemspec prepared"
+
+      # Step 3: Build the gem (no compilation)
+      puts "  3. Building gem from precompiled extensions..."
+      system("gem build #{binary_gemspec}") || (puts "❌ Failed to build gem"; exit 1)
+
+      # Find and move the gem to pkg/
+      gem_files = Dir.glob("#{gem_name}-*.gem")
+      unless gem_files.any?
+        puts "❌ Failed to find built gem"
+        exit 1
+      end
+      built_gem = gem_files.last
+      FileUtils.mv(built_gem, "#{original_dir}/#{PKG_DIR}/")
+
+      # Cleanup (keep lib_dir with precompiled .so files)
+      FileUtils.rm(binary_gemspec)
+
+      puts "✅ Built: pkg/#{File.basename(built_gem)}"
+      puts "   (Contains #{so_files.count} precompiled Ruby extension(s))"
 
     ensure
       Dir.chdir(original_dir)

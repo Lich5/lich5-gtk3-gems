@@ -204,10 +204,8 @@ jobs:
 
       - name: Build consolidated x64 gem (multi-Ruby)
         run: |
-          # Load Rakefile from root directory and build gem
-          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('glib2')"
-        env:
-          BINARY_GEM: 'true'
+          # Consolidate precompiled extensions into final gem (no compilation)
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:consolidate_gem'].invoke('glib2')"
 
       - name: Copy gem to output
         run: |
