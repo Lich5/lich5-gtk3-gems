@@ -20,6 +20,7 @@
 
 require 'fileutils'
 require 'pathname'
+require 'set'
 
 class DLLDependencyExtractor
   def initialize(gem_name, architecture, msys2_root = nil)
