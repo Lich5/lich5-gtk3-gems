@@ -150,7 +150,6 @@ jobs:
           ls -lh gems/glib2/lib/glib2/vendor/bin/ || echo "No DLLs copied"
 
       - name: Build glib2 binary gem (x86) - x86-mingw32 platform
-        shell: msys2 {0}
         run: |
           # Note: This would need to target x86-mingw32 platform
           # Currently building as x64-mingw32 as Ruby setup doesn't support x86
