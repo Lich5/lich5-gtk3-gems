@@ -240,14 +240,15 @@ namespace :build do
       end
       so_file = so_files.first
 
-      # Step 2: Copy to lib/#{gem_name}/ with Ruby version suffix
-      lib_dir = "lib/#{gem_name}"
+      # Step 2: Copy to lib/#{gem_name}/{major}{minor}/ directory
+      # Use version-specific directory structure like official ruby-gnome gems
+      lib_dir = File.join("lib", gem_name, current_ruby)
       FileUtils.mkdir_p(lib_dir)
 
-      # Name the .so with Ruby version for multi-version gems
-      versioned_so = File.join(lib_dir, "#{gem_name}-ruby#{current_ruby}.so")
+      # Always name the .so as "#{gem_name}.so", version selection happens via directory
+      versioned_so = File.join(lib_dir, "#{gem_name}.so")
       FileUtils.cp(so_file, versioned_so)
-      puts "  ✅ Compiled extension copied to lib/ as #{File.basename(versioned_so)}"
+      puts "  ✅ Compiled extension copied to lib/#{gem_name}/#{current_ruby}/ as #{gem_name}.so"
 
       # Step 3: Modify gemspec for binary platform and Ruby version
       puts "  2. Preparing gemspec for Windows binary (Ruby #{current_ruby})..."
