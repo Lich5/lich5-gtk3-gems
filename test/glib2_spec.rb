@@ -39,6 +39,8 @@ describe 'GLib2' do
 
       begin
         original_path = ENV['PATH']
+        # Ensure glib2/lib is in load path before loading glib2.rb
+        $LOAD_PATH.unshift(File.join(GLIB2_DIR, 'lib')) unless $LOAD_PATH.include?(File.join(GLIB2_DIR, 'lib'))
         # Force reload to test PATH setup
         load File.join(GLIB2_DIR, 'lib', 'glib2.rb')
 
