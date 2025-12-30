@@ -29,7 +29,7 @@ class BuildValidationSpec < Minitest::Test
   # Test: Gemspec modifications are present and documented
   def test_gemspec_modifications
     gemspec_path = File.join(@gem_dir, 'glib2.gemspec')
-    gemspec_content = File.read(gemspec_path)
+    gemspec_content = File.read(gemspec_path, encoding: 'UTF-8')
 
     # Platform should be set to x64-mingw32
     assert_match(/s\.platform\s*=\s*Gem::Platform\.new\(['"]x64-mingw32['"]\)/, gemspec_content,
@@ -57,10 +57,10 @@ class BuildValidationSpec < Minitest::Test
   # Test: lib/glib2.rb has version-specific loading modifications
   def test_glib2_loader_modifications
     loader_path = File.join(@gem_dir, 'lib', 'glib2.rb')
-    loader_content = File.read(loader_path)
+    loader_content = File.read(loader_path, encoding: 'UTF-8')
 
     # Should have version-specific .so loading
-    assert_match(/require ['"]glib2\/\#{major}\.#{minor}\/glib2\.so['"]/, loader_content,
+    assert_match(/require ['"]glib2\/\#\{major\}\.\#\{minor\}\/glib2\.so['"]/, loader_content,
                  'Loader should have version-specific require statement')
 
     # Should have Windows DLL path setup
@@ -77,7 +77,7 @@ class BuildValidationSpec < Minitest::Test
     adr_path = File.expand_path('../docs/adr/0001-binary-gem-upstream-modifications.md', __dir__)
     assert File.exist?(adr_path), 'ADR should exist'
 
-    adr_content = File.read(adr_path)
+    adr_content = File.read(adr_path, encoding: 'UTF-8')
     assert_match(/# ADR-0001: Binary Gem Upstream Modifications/, adr_content,
                  'ADR should have correct title')
     assert_match(/## Context/, adr_content, 'ADR should have Context section')
@@ -95,7 +95,7 @@ class BuildValidationSpec < Minitest::Test
     script_path = File.expand_path('../scripts/extract-dll-dependencies.rb', __dir__)
     assert File.exist?(script_path), 'DLL extraction script should exist'
 
-    script_content = File.read(script_path)
+    script_content = File.read(script_path, encoding: 'UTF-8')
 
     # Should have workflow header
     assert_match(/# Workflow: Extract DLL Dependencies/, script_content,
@@ -117,7 +117,7 @@ class BuildValidationSpec < Minitest::Test
   # Test: Rakefile has YARD documentation for build methods
   def test_rakefile_documentation
     rakefile_path = File.expand_path('../Rakefile', __dir__)
-    rakefile_content = File.read(rakefile_path)
+    rakefile_content = File.read(rakefile_path, encoding: 'UTF-8')
 
     # Should have YARD docs for build_binary_gem
     assert_match(/# Build Windows binary gem for a single Ruby version/, rakefile_content,
@@ -145,13 +145,13 @@ class BuildValidationSpec < Minitest::Test
     # The structure should support lib/glib2/3.3/, lib/glib2/3.4/, etc.
     # This test just validates the concept is documented in the Rakefile
     rakefile_path = File.expand_path('../Rakefile', __dir__)
-    rakefile_content = File.read(rakefile_path)
+    rakefile_content = File.read(rakefile_path, encoding: 'UTF-8')
 
-    assert_match(/lib\/#{gem_name}\/#{major}\.#{minor}/, rakefile_content,
+    assert_match(/lib\/\#\{gem_name\}\/\{major\}\.\{minor\}/, rakefile_content,
                  'Rakefile should reference version-specific directory structure')
-    assert_match(/lib\/glib2\/3\.3/, rakefile_content,
+    assert_match(/lib\/<gem>\/3\.3\//, rakefile_content,
                  'Rakefile should mention example version directory (3.3)')
-    assert_match(/lib\/glib2\/3\.4/, rakefile_content,
+    assert_match(/lib\/<gem>\/3\.4\//, rakefile_content,
                  'Rakefile should mention example version directory (3.4)')
   end
 
@@ -167,7 +167,7 @@ class BuildValidationSpec < Minitest::Test
   # Test: .gitignore includes .DS_Store
   def test_gitignore_includes_ds_store
     gitignore_path = File.expand_path('../.gitignore', __dir__)
-    gitignore_content = File.read(gitignore_path)
+    gitignore_content = File.read(gitignore_path, encoding: 'UTF-8')
 
     assert_match(/\.DS_Store/, gitignore_content,
                  '.gitignore should include .DS_Store')

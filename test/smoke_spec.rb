@@ -26,7 +26,10 @@ class SmokeSpec < Minitest::Test
   def test_glib2_loads
     skip 'glib2 not available in load path' unless @glib2_loadable
 
-    assert require('glib2'), 'glib2 should load successfully'
+    # Verify gem loads without raising errors
+    # (Note: require returns false if already loaded, so we just check it doesn't raise)
+    require 'glib2'
+    assert true, 'glib2 loaded successfully'
   end
 
   # Test: GLib module is defined
