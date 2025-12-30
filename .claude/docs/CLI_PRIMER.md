@@ -1,16 +1,16 @@
 # Claude Development Primer
 
-**Last Updated:** [DATE]
-**Project:** [YOUR PROJECT NAME]
-**Product Owner:** [YOUR NAME/TEAM]
+**Last Updated:** December 30, 2025
+**Project:** Lich5 GTK3 Binary Gems
+**Product Owner:** Doug
 
 ---
 
 ## Your Role
 
 **Claude (Execution & Testing):**
-- Implement code based on work unit specifications
-- Execute tests ([YOUR TEST FRAMEWORK])
+- Implement build automation based on work unit specifications
+- Execute build validation tests (upstream minitest/Test::Unit suites + smoke tests)
 - Commit to designated branches
 - Report blockers or questions to Product Owner
 
@@ -51,66 +51,77 @@ git commit -m "chore: update dependencies"
 1. **Clarify First** - If work unit unclear, ask Product Owner before proceeding
 2. **Evidence-Based** - Research code before making changes
 3. **Well-Architected** - Follow SOLID principles, avoid duplication (DRY)
-4. **Zero Regression** - All existing workflows must continue unchanged
-5. **Tests Mandatory** - [YOUR TEST TYPES: unit, functional, integration, etc.]
-6. **Quality Gates** - See QUALITY-GATES section below
+4. **Zero Regression** - All existing gem builds must continue to work
+5. **Tests Mandatory** - Build validation tests, smoke tests, upstream test suites
+6. **Quality Gates** - See Quality Standards section below
 
 ---
 
 ## Project Context
 
-**System:** [YOUR PROJECT DESCRIPTION]
+**System:** Binary gem build system for GTK3 and native Ruby gems (nokogiri, mechanize) for Lich5 distribution
 
-**Architecture:** [YOUR TECH STACK AND KEY ARCHITECTURAL PATTERNS]
+**Architecture:**
+- Build automation (Rake tasks, PowerShell/Bash scripts)
+- Upstream gem sources (ruby-gnome, nokogiri maintainers)
+- Binary packaging for Windows (x64-mingw32), macOS (darwin), Linux (future)
+- Vendor library bundling (GTK3 DLLs from MSYS2)
 
-**Current Focus:** [CURRENT PROJECT PHASE OR PRIORITIES]
+**Current Focus:** Phase 1 - Windows POC (build first gem: glib2)
 
-**Key Constraint:** [YOUR KEY CONSTRAINTS - e.g., zero regression, backward compatibility, etc.]
+**Key Constraint:** Zero regression - existing gem builds must remain functional. Gems must install on Windows without devkit/build tools.
 
 ---
 
 ## Quality Standards
 
+**Testing Philosophy:**
+
+This project builds and validates binary gems from upstream sources. We do NOT test upstream functionality - we validate that our build process produces working binary gems.
+
 **Before marking work complete:**
 
 - [ ] All acceptance criteria met
-- [ ] Tests written and passing
-  - [Test type 1: e.g., Unit tests for new components]
-  - [Test type 2: e.g., Integration tests for workflows]
-  - [Test type 3: e.g., Regression tests for existing functionality]
-- [ ] Code follows [YOUR ARCHITECTURE PRINCIPLES]
-- [ ] No code duplication (DRY)
-- [ ] [YOUR DOCUMENTATION STANDARD: e.g., JSDoc, YARD, docstrings]
-- [ ] [YOUR LINTER: e.g., ESLint, RuboCop, Black] passes
-- [ ] Zero regression verified
+- [ ] Build validation tests passing:
+  - **Build Validation** - Gem compiles, all DLLs bundled, correct platform tag
+  - **Smoke Tests** - `require 'gem-name'` succeeds, basic API calls work
+  - **Upstream Tests** - Run maintainer's test suite (if provided) to prove build correctness
+- [ ] Code follows SOLID + DRY principles
+- [ ] Documentation clear and complete (YARD for Ruby, inline comments)
+- [ ] RuboCop passes (Ruby code only)
+- [ ] Zero regression verified (all existing gems still build)
 - [ ] Committed with proper format
 
 ---
 
 ## File Locations
 
-**Customize these paths for your project:**
-
 **Code:**
-- Main: `/path/to/your/source/`
-- [Component type 1]: `/path/to/component1/`
-- Tests: `/path/to/your/tests/`
+- Gem sources: `gems/` (glib2/, gtk3/, nokogiri/, etc.)
+- Build scripts: `scripts/` (download-gtk3-libs-windows.ps1, etc.)
+- Build system: `Rakefile`
+- Vendor libraries: `vendor/windows/x64/`, `vendor/macos/`, etc.
+- Build output: `pkg/` (gitignored)
+- Integration tests: `test/`
 
 **Documentation:**
-- Context: `/.claude/docs/`
-- Work units: `/.claude/work-units/CURRENT.md`
+- Context: `.claude/docs/`
+- Work units: `.claude/work-units/CURRENT.md`
+- Project docs: `docs/` (BUILDING.md, ARCHITECTURE.md, etc.)
 
 ---
 
 ## Common Commands
 
-**Testing:**
+**Build & Test:**
 ```bash
-# Customize these for your test framework
-npm test                    # Run all tests
-npm test path/to/test       # Run specific test
-npm run lint                # Linting
-npm run lint:fix            # Auto-fix linting issues
+rake status                 # Check repository state
+rake build:gem[glib2]       # Build specific gem
+rake test:smoke[glib2]      # Smoke test a gem (require + basic API)
+rake test:upstream[glib2]   # Run upstream test suite
+rake test:all               # Run all validation tests
+rubocop                     # Lint Ruby code
+rubocop -a                  # Auto-fix linting issues
 ```
 
 **Git workflow:**

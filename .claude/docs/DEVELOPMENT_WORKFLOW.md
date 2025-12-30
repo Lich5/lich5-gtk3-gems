@@ -69,39 +69,49 @@ rm .claude/work-units/CURRENT.md
 
 **BEFORE EVERY PUSH:**
 
-- [ ] Tests written for all code changes
-- [ ] Tests pass ([YOUR TEST COMMAND])
-- [ ] [YOUR LINTER] clean (no violations)
-- [ ] [OTHER CHECKS: e.g., type checking, security scanning]
+- [ ] Build validation tests written/updated for build changes
+- [ ] Tests pass: `rake test:all` or gem-specific tests
+- [ ] RuboCop clean: `rubocop` (Ruby code only)
+- [ ] Gem builds successfully: `rake build:gem[gem-name]`
 - [ ] Only necessary files included in commit
-- [ ] Commit messages follow [YOUR CONVENTION]
-- [ ] [YOUR DOCUMENTATION STANDARD] complete
+- [ ] Commit messages follow Conventional Commits (see below)
+- [ ] YARD documentation complete for new Ruby code
 - [ ] `git status` shows clean working tree (or only intended changes)
 
 ---
 
 ## Test Requirements
 
-Tests are **ALWAYS** required:
-- [Test type 1] per [what warrants this test type]
-- [Test type 2] per [what warrants this test type]
-- Tests must be committed with code changes
+**Testing Philosophy:** This project validates binary gem builds, not upstream code functionality.
+
+Tests are **ALWAYS** required for build changes:
+- **Build Validation Tests** - Verify gem compiles, DLLs bundled, correct platform tag
+- **Smoke Tests** - Verify `require 'gem-name'` succeeds and basic API works
+- **Upstream Test Execution** - Run maintainer's test suite (if provided) to prove build correctness
+
+**Success Criteria:**
+- Gem builds without errors
+- Gem installs on clean target platform (no devkit/build tools)
+- `require` succeeds
+- Upstream test suite passes (when available)
+- Basic smoke test demonstrates functionality
 
 ### When Tests Can't Run in Isolation
 
-Some changes can't run tests standalone due to dependencies. This is acceptable IF:
-1. You've validated tests would pass with dependencies available
-2. You've documented the dependency
-3. The dependency will be satisfied in the actual environment
+Binary gem tests require target platform (e.g., Windows for x64-mingw32 gems). This is acceptable IF:
+1. You've validated tests would pass on target platform (VM, CI/CD)
+2. You've documented platform requirement
+3. CI/CD will validate on actual platform
 
 ---
 
 ## Code Review & Quality Gates
 
 Every change must pass:
-1. **[YOUR TEST FRAMEWORK]** - All tests passing
-2. **[YOUR LINTER]** - Style compliance
-3. **Logical validation** - Code follows project patterns from CLI_PRIMER and SOCIAL_CONTRACT
+1. **Build Validation** - `rake test:all` passing (or gem-specific tests)
+2. **RuboCop** - Style compliance for Ruby code
+3. **Gem Build** - `rake build:gem[name]` succeeds
+4. **Logical validation** - Code follows project patterns from CLI_PRIMER and SOCIAL_CONTRACT
 
 ---
 

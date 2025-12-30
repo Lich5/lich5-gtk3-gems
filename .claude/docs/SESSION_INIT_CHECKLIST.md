@@ -23,17 +23,19 @@ If you see "This session is being continued from a previous conversation" or if 
 ### 3. Knowledge Anchors
 
 **NEVER FORGET:**
-- Tests are ALWAYS required with code changes
-- Validate before pushing: tests pass + [YOUR CHECKS] clean
+- Build validation tests are ALWAYS required with build changes
+- Validate before pushing: `rake test:all` passes + `rubocop` clean + gem builds
 - Archive CURRENT.md before creating new work units
 - Session compaction happens - re-read core docs when it does
+- This project validates BUILD CORRECTNESS, not upstream functionality
 
 **RED FLAGS (you've lost context if you do these):**
-- Writing code without tests
+- Writing build changes without validation tests
 - Skipping validation before pushing
 - Overwriting CURRENT.md without archiving
 - Not consulting CLI_PRIMER/SOCIAL_CONTRACT
 - Making architectural decisions in implementation mode
+- Testing upstream functionality instead of build correctness
 
 ---
 
@@ -72,12 +74,13 @@ Signs you've lost critical knowledge:
 
 ## Notes for Future Sessions
 
-Key facts about [YOUR PROJECT]:
-- Uses [YOUR TEST FRAMEWORK] for testing
-- Uses [YOUR LINTER] for style compliance
-- [YOUR BRANCHING STRATEGY]
-- [YOUR KEY CONVENTIONS]
-- Documentation is referenced in decisions, not optional
+Key facts about Lich5 GTK3 Binary Gems:
+- Uses **Build Validation Testing** - validates build correctness, not upstream functionality
+- Uses **RuboCop** for Ruby code style compliance
+- Branching: `claude/*` for Claude work, PRs are work-unit oriented (5 or less commits)
+- Commit format: **Conventional Commits** (feat:, fix:, chore:, docs:, etc.)
+- Documentation: **YARD** for Ruby code, inline comments for clarity
+- Zero regression: All existing gem builds must continue to work
 
 If you're uncertain about any practice, check these documents first.
 
@@ -104,4 +107,4 @@ If you're uncertain about any practice, check these documents first.
 
 **Signed**: The Team (via Claude Code)
 **Purpose**: Maintain development standards across session boundaries
-**Last Updated**: [DATE]
+**Last Updated**: December 30, 2025
