@@ -20,11 +20,18 @@ Focus on:
 
 **Quality checklist before pushing:**
 - [ ] All acceptance criteria met
-- [ ] Tests written and passing
-- [ ] Style/lint checks passing
-- [ ] Zero regression verified
-- [ ] Code documented
-- [ ] Committed with proper format
+- [ ] Build validation tests written and passing
+- [ ] RuboCop clean (automation code only: Rakefile, scripts/, test/)
+- [ ] Gem builds successfully (if applicable)
+- [ ] Documentation complete (see `docs/DOCUMENTATION_STANDARDS.md`):
+  - YARD for Ruby methods (params, return, examples)
+  - Workflow headers for scripts (intent, input, output, major functions)
+  - Inline comments explain "why" (not "what")
+  - ADR references in code for deviations from project norms
+  - Existing documentation preserved (removal = regression)
+- [ ] No modifications to `gems/` without ADR documentation
+- [ ] Zero regression verified (all existing gem builds still work)
+- [ ] Committed with proper format (Conventional Commits with gem scopes)
 - [ ] Ready for review
 
 **Remember:** Mark work unit complete and archive before starting new work.

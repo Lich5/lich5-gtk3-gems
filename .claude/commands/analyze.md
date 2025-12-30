@@ -25,7 +25,7 @@ Focus on:
 - **Investigation only** - don't finalize implementations
 - **No commits to designated branches** - use `/code` for that
 - **No pushes to remote** - experimentation stays local
-- Document findings for implementation mode
+- **Document findings** - Create work unit or detailed notes for implementation mode
 
 **When to use this mode:**
 - "I need to understand why X is happening"
