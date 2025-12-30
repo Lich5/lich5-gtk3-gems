@@ -54,24 +54,44 @@ All work must be:
 - Keeps CURRENT.md accurate (always shows active work)
 - Prevents GitHub searches from surfacing stale/completed tasks
 - Maintains clean project history
+- Provides fast filesystem search + git history
 
-**How to archive:** [YOUR APPROACH - examples below]
+**Hybrid Approach:** Date-based filesystem archive WITH git commit tracking
 
-**Examples:**
-```bash
-# Option 1: Date-based
-mv .claude/work-units/CURRENT.md .claude/work-units/archive/2025-01-15-feature-name.md
+**Process:**
 
-# Option 2: Feature-based
-mv .claude/work-units/CURRENT.md .claude/work-units/archive/feature-name/work-unit.md
+1. **Update CURRENT.md** with git commit history before archiving:
+   ```markdown
+   ## Git Commits (Parent → Final)
 
-# Option 3: Git-based (commit and delete, rely on git history)
-git add .claude/work-units/CURRENT.md
-git commit -m "chore: complete work unit for feature X"
-rm .claude/work-units/CURRENT.md
-```
+   **Parent Commit:** `abc1234` - feat(glib2): add build rake task
+   - `def5678` - feat(glib2): add DLL extraction script
+   - `ghi9012` - test(glib2): add smoke tests
+   - `jkl3456` - docs(glib2): document build process
+   **Final Commit:** `jkl3456`
 
-**Choose the approach that fits your team's organization style.**
+   **PR:** #123 - feat(all): add glib2 binary gem build pipeline
+   **PR Merge:** `mno7890` (merged to main)
+   ```
+
+2. **Archive to filesystem** with date-based naming:
+   ```bash
+   mv .claude/work-units/CURRENT.md \
+      .claude/work-units/archive/2025-12-30-build-glib2-gem.md
+   ```
+
+3. **Commit the archive** to git:
+   ```bash
+   git add .claude/work-units/archive/2025-12-30-build-glib2-gem.md
+   git commit -m "chore(all): archive work unit - build glib2 gem"
+   git push
+   ```
+
+**Benefits:**
+- **Fast Filesystem Search:** VSCode, Spotlight can search date-based archives
+- **Git History:** `git log --all --grep="build-glib2-gem"` when needed
+- **Traceability:** Work unit → Commits (embedded SHAs), Commits → Work unit
+- **Both worlds:** Filesystem browsing AND git capabilities
 
 ---
 

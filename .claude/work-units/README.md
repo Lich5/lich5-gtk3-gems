@@ -71,37 +71,58 @@ Create `CURRENT.md` with specifications:
 
 **CRITICAL:** Archive CURRENT.md before creating new work unit
 
-**Why:** Keeps CURRENT.md accurate, prevents GitHub search pollution, maintains history
+**Why:**
+- Keeps CURRENT.md accurate (always shows active work)
+- Prevents GitHub search pollution
+- Provides fast filesystem search (VSCode, Spotlight)
+- Maintains git history and commit traceability
 
-**How:** See `docs/DEVELOPMENT_WORKFLOW.md` for your project's archive approach
+**Hybrid Archive Approach:**
+
+1. **Before archiving** - Add git commit history to CURRENT.md:
+   ```markdown
+   ## Git Commits (Parent → Final)
+
+   **Parent Commit:** `abc1234` - feat(glib2): first commit
+   - `def5678` - feat(glib2): second commit
+   **Final Commit:** `def5678`
+
+   **PR:** #123 - feat(all): PR title
+   **PR Merge:** `mno7890` (merged to main)
+   ```
+
+2. **Archive to filesystem** with date-based naming:
+   ```bash
+   mv .claude/work-units/CURRENT.md \
+      .claude/work-units/archive/2025-12-30-feature-name.md
+   ```
+
+3. **Commit the archive** to git:
+   ```bash
+   git add .claude/work-units/archive/2025-12-30-feature-name.md
+   git commit -m "chore(all): archive work unit - feature name"
+   ```
+
+**See:** `docs/DEVELOPMENT_WORKFLOW.md` for complete process
 
 ---
 
 ## Archive Directory
 
-Store completed work units here using your preferred organization:
+**Organization:** Date-based with embedded git commit tracking
 
-**Date-based:**
 ```
 archive/
-├── 2025-01-15-user-authentication.md
-├── 2025-01-16-password-reset.md
-└── 2025-01-20-profile-settings.md
+├── 2025-12-28-build-glib2-gem.md
+├── 2025-12-29-add-gtk3-support.md
+└── 2025-12-30-nokogiri-binary-gem.md
 ```
 
-**Feature-based:**
-```
-archive/
-├── user-management/
-│   ├── authentication.md
-│   ├── password-reset.md
-│   └── profile-settings.md
-└── reporting/
-    ├── dashboard.md
-    └── export.md
-```
-
-**Or:** Don't keep files, rely on git history (commit CURRENT.md before deleting)
+Each archived work unit contains:
+- Complete work unit specification
+- Git commit history (parent → final)
+- PR reference and merge commit
+- Traceability to code changes
 
 ---
 
