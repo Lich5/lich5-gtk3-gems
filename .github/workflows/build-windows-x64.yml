@@ -93,9 +93,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: glib2-extensions-x64-${{ matrix.ruby }}
-          path: |
-            gems/glib2/lib/glib2/**/glib2.so
-            gems/glib2/lib/glib2/vendor/**/*
+          path: gems/glib2/lib/glib2/
           retention-days: 30
           if-no-files-found: warn
 
