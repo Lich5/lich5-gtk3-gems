@@ -19,39 +19,6 @@ require 'English'
 require 'thread'
 require 'glib2/deprecatable'
 
-# For binary gems: add vendor/bin to PATH before loading native extension
-# This allows bundled DLLs to be found on Windows
-if Gem.win_platform?
-  vendor_bin = File.join(__dir__, 'glib2', 'vendor', 'bin')
-  if Dir.exist?(vendor_bin)
-    separator = File::PATH_SEPARATOR
-    paths = (ENV['PATH'] || '').split(separator)
-    unless paths.include?(vendor_bin)
-      paths.unshift(vendor_bin)
-      ENV['PATH'] = paths.join(separator)
-    end
-  end
-end
-
-# Load the correct precompiled extension for this Ruby version
-# Binary gem includes .so files for Ruby 3.3, 3.4, and 4.0
-if defined?(RUBY_ENGINE) && RUBY_ENGINE == 'cruby'
-  ruby_version = "#{RUBY_VERSION.major}#{RUBY_VERSION.minor}"
-  glib2_dir = File.join(__dir__, 'glib2')
-
-  # Try to load version-specific .so
-  so_file = File.join(glib2_dir, "glib2-ruby#{ruby_version}.so")
-  if File.exist?(so_file)
-    require_relative so_file
-  else
-    # Fallback to generic glib2.so (source build)
-    require "#{glib2_dir}/glib2.so"
-  end
-else
-  # Non-CRuby or source build
-  require "glib2.so"
-end
-
 module GLib
   module_function
   def check_binding_version?(major, minor, micro)
