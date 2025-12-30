@@ -118,13 +118,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: glib2-extensions-x64-3.3
-          path: .
+          path: gems/glib2/lib/
 
       - name: Download x64 extensions (Ruby 3.4)
         uses: actions/download-artifact@v4
         with:
           name: glib2-extensions-x64-3.4
-          path: .
+          path: gems/glib2/lib/
 
       - name: Verify artifact extraction
         run: |
