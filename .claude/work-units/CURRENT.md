@@ -14,23 +14,28 @@ Refactor PR #7 (glib2 x64-mingw32 binary gem POC) to meet production framework s
 
 **Outcome:** Production-ready glib2 binary gem build system that serves as the template for the remaining 9 GTK3 gems.
 
-**Approach:** Preserve working functionality, add missing standards compliance (documentation, tests, commit structure), investigate and restore removed upstream code.
+**Approach:** Start with pristine upstream ruby-gnome glib2 source, apply minimal documented modifications for binary gem distribution, add comprehensive standards compliance (documentation, tests, commit structure). Reference PR #7 for proven build techniques.
 
 ---
 
 ## Acceptance Criteria
 
 ### Code Quality & Architecture
-- [ ] Restore 300+ lines removed from `gems/glib2/lib/glib2.rb` (signal handling, Enum/Flags, Log module, etc.)
-- [ ] Review and approve gemspec modifications with Product Owner (dependency removal)
+- [ ] Import pristine upstream glib2 source from ruby-gnome repository
+- [ ] Apply minimal modifications to upstream source with Product Owner review:
+  - `gems/glib2/glib2.gemspec` - Platform tag, dependency removal
+  - `gems/glib2/lib/glib2.rb` - Version-specific .so loading, vendor/bin PATH setup
+- [ ] All upstream modifications documented in ADR with inline code references
 - [ ] Run RuboCop on automation code (Rakefile, scripts/, test/) - all violations fixed
 - [ ] Code follows DRY principles (extract diagnostic steps to reusable scripts)
-- [ ] No .DS_Store in git (add to .gitignore)
+- [ ] Add .DS_Store to .gitignore
 
 ### Documentation (DOCUMENTATION_STANDARDS.md)
 - [ ] Create ADR: `docs/adr/0001-binary-gem-upstream-modifications.md` documenting:
-  - Gemspec dependency removal rationale
-  - Any justified modifications to upstream source
+  - Rationale for binary gem approach
+  - Gemspec modifications (platform tag, dependency removal)
+  - lib/glib2.rb modifications (version-specific loading, vendor PATH)
+  - Why these minimal changes are necessary and safe
 - [ ] Add workflow header to `scripts/extract-dll-dependencies.rb`:
   - Intent, Input, Output, Major Functions
 - [ ] Add YARD documentation to Rakefile methods:
@@ -147,30 +152,36 @@ Refactor PR #7 (glib2 x64-mingw32 binary gem POC) to meet production framework s
 
 ## Implementation Notes
 
-### Phase 1: Investigation & Restoration
-**Goal:** Understand what was removed and restore upstream code
+### Phase 1: Fresh Upstream Import
+**Goal:** Start with pristine ruby-gnome glib2 source, apply minimal modifications
 
-1. **Compare gems/glib2/lib/glib2.rb:**
-   - PR #7 version (reduced to ~90 lines)
-   - Upstream ruby-gnome version (original ~400 lines)
-   - Identify what was removed:
-     - `__add_one_arg_setter` - Property setter generation
-     - `MetaSignal` - Signal handling infrastructure
-     - `Enum`/`Flags` classes - Type conversion, marshaling
-     - `Log` module - Logging infrastructure
-     - Various GLib Ruby extensions
+1. **Import Upstream Source:**
+   - Source: ruby-gnome/ruby-gnome repository (https://github.com/ruby-gnome/ruby-gnome)
+   - Target: `gems/glib2/` directory
+   - Version: Latest compatible with GTK3 (likely from glib2/ subdirectory)
+   - Verification: Ensure pristine source (no prior modifications)
 
-2. **Restoration Decision:**
-   - **Default:** Restore ALL removed code (upstream integrity)
-   - **Alternative:** If removal was intentional and safe, document in ADR
-   - **Validation:** After restoration, smoke test must still pass
+2. **Identify Required Modifications (Reference PR #7):**
+   - **gemspec changes:**
+     - Set platform to `x64-mingw32` (binary gem)
+     - Remove build-time dependencies: `pkg-config`, `native-package-installer`
+     - Remove platform requirements (not needed for binary distribution)
+     - Remove `msys2_mingw_dependencies` metadata
+   - **lib/glib2.rb changes:**
+     - Add version-specific .so loading: `require "glib2/#{major}.#{minor}/glib2.so"`
+     - Add vendor/bin PATH setup for bundled DLLs (Windows only)
+     - Preserve ALL other upstream code (signal handling, Enum/Flags, Log module, etc.)
 
-3. **Gemspec Review with Product Owner:**
-   - Removed dependencies: `pkg-config`, `native-package-installer`
-   - Removed platform requirements (Alpine, Debian, Homebrew, MSYS2, etc.)
-   - Removed `msys2_mingw_dependencies` metadata
-   - **Rationale:** Binary gems bundle everything, no build-time deps needed at runtime
-   - **Decision:** Review together, document in ADR if approved
+3. **Modification Review with Product Owner:**
+   - Review each proposed change before implementation
+   - Ensure modifications are minimal and necessary
+   - Document rationale for each change in ADR
+   - All changes must reference ADR in inline comments
+
+4. **Implementation Principle:**
+   - **Upstream source is sacred** - modify only what's absolutely necessary
+   - **Document everything** - every change gets ADR entry + inline comment
+   - **Preserve functionality** - upstream Ruby helpers must remain intact
 
 ### Phase 2: Documentation
 **Goal:** Comprehensive documentation per DOCUMENTATION_STANDARDS.md
@@ -309,23 +320,23 @@ Refactor PR #7 (glib2 x64-mingw32 binary gem POC) to meet production framework s
 
 ## Technical Risks & Mitigation
 
-### Risk 1: Restoring glib2.rb Code Breaks Functionality
-**Impact:** High - Could break working smoke test
-**Probability:** Medium - Unknown why code was removed
+### Risk 1: Upstream Source Incompatibility
+**Impact:** High - Wrong upstream version could break GTK3 compatibility
+**Probability:** Low - ruby-gnome is stable, versions well-documented
 **Mitigation:**
-- Restore incrementally, test after each section
-- Use git to compare original → PR#7 → restored
-- If breakage occurs, investigate why before proceeding
-- Document findings in ADR if removal was necessary
+- Identify correct upstream version matching GTK3 requirements
+- Check ruby-gnome release notes for compatibility
+- Verify glib2 version requirements (>= 2.56 per README)
+- Test build immediately after import
 
-### Risk 2: Gemspec Changes Not Fully Understood
-**Impact:** Medium - Could cause runtime dependency issues
-**Probability:** Low - Changes seem logical for binary gems
+### Risk 2: Minimal Modifications Insufficient
+**Impact:** Medium - May discover additional changes needed during build
+**Probability:** Medium - PR #7 may have made other necessary changes
 **Mitigation:**
-- Review with Product Owner before finalizing
-- Test gem install on clean Windows environment
-- Verify no missing dependencies at runtime
-- Document rationale in ADR
+- Reference PR #7 thoroughly during implementation
+- Document any additional required changes in ADR
+- Review each modification with Product Owner before applying
+- Test build incrementally as modifications are made
 
 ### Risk 3: Testing on Windows Platform
 **Impact:** Medium - Limited local testing capability
@@ -334,14 +345,16 @@ Refactor PR #7 (glib2 x64-mingw32 binary gem POC) to meet production framework s
 - Rely on GitHub Actions for Windows validation
 - Product Owner smoke tests on actual Windows
 - Ensure CI/CD tests comprehensive
+- Build validation tests verify structure without execution
 
-### Risk 4: Commit Squash Loses Important Context
-**Impact:** Low - Debug commits don't have valuable context
-**Probability:** Low - Debug commits are noise
+### Risk 4: DLL Extraction Script Complexity
+**Impact:** Medium - Transitive dependencies could be missed
+**Probability:** Low - PR #7 proved objdump approach works
 **Mitigation:**
-- Review PR #7 commits before squashing
-- Preserve any valuable technical decisions in new commits
-- Reference PR #7 in new PR description for history
+- Port proven DLL extraction logic from PR #7
+- Comprehensive documentation of extraction process
+- Validation tests check for required DLLs
+- Product Owner smoke test catches missing DLLs
 
 ---
 
