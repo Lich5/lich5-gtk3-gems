@@ -46,23 +46,7 @@ Gem::Specification.new do |s|
   s.files += Dir.glob("sample/**/*")
   s.files += Dir.glob("test/**/*")
 
-  s.add_runtime_dependency("pkg-config", ">= 1.3.5")
-  s.add_runtime_dependency("native-package-installer", ">= 1.0.3")
-
-  [
-    ["alpine_linux", "glib-dev"],
-    ["alt_linux", "glib2-devel"],
-    ["arch_linux", "glib2"],
-    ["conda", "glib"],
-    ["debian", "libglib2.0-dev"],
-    ["gentoo_linux", "dev-libs/glib"],
-    ["homebrew", "glib"],
-    ["macports", "glib2"],
-    ["msys2", "glib2"],
-    ["rhel", "pkgconfig(gobject-2.0)"],
-  ].each do |platform, package|
-    s.requirements << "system: gobject-2.0>=2.56.0: #{platform}: #{package}"
-  end
-
-  s.metadata["msys2_mingw_dependencies"] = "glib2"
+  # For binary gems: pkg-config and native-package-installer are NOT needed at runtime
+  # since the gem contains precompiled .so files and vendor DLLs.
+  # For source gems: these would be runtime dependencies, but we distribute only binaries.
 end

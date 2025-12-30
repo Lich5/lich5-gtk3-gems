@@ -188,6 +188,30 @@ namespace :build do
     end
   end
 
+  desc 'Consolidate precompiled extensions and build gem (no compilation)'
+  task :consolidate_gem, [:name] do |t, args|
+    gem_name = args[:name]
+
+    unless ALL_GEMS.include?(gem_name)
+      puts "❌ Unknown gem: #{gem_name}"
+      puts "Available gems: #{ALL_GEMS.join(', ')}"
+      exit 1
+    end
+
+    gem_dir = "#{GEMS_DIR}/#{gem_name}"
+    unless Dir.exist?(gem_dir)
+      puts "❌ Gem source not found: #{gem_dir}"
+      puts "Run: rake gems:setup"
+      exit 1
+    end
+
+    # Create pkg directory
+    FileUtils.mkdir_p(PKG_DIR)
+
+    # This task is for consolidating precompiled extensions, not compiling
+    consolidate_precompiled_gem(gem_name, gem_dir)
+  end
+
   private
 
   def build_source_gem(gem_name, gem_dir)
@@ -210,8 +234,11 @@ namespace :build do
   end
 
   def build_binary_gem(gem_name, gem_dir)
-    current_ruby = "#{RUBY_VERSION.major}.#{RUBY_VERSION.minor}"
-    puts "Building #{gem_name} (Windows binary gem for Ruby #{current_ruby})..."
+    # RUBY_VERSION is a string like "3.4.8", parse it for version numbers
+    ruby_parts = RUBY_VERSION.split('.')
+    current_ruby = "#{ruby_parts[0]}#{ruby_parts[1]}"
+    current_ruby_dot = "#{ruby_parts[0]}.#{ruby_parts[1]}"
+    puts "Building #{gem_name} (Windows binary gem for Ruby #{current_ruby_dot})..."
 
     unless Gem.win_platform?
       puts "⚠️  Binary gem build can only run on Windows"
@@ -224,7 +251,7 @@ namespace :build do
       Dir.chdir(gem_dir)
 
       # Step 1: Compile native extension
-      puts "  1. Compiling native extension for Ruby #{current_ruby}..."
+      puts "  1. Compiling native extension for Ruby #{current_ruby_dot}..."
       system("ruby extconf.rb") unless File.exist?("Makefile")
       unless File.exist?("Makefile")
         puts "❌ Failed to generate Makefile"
@@ -240,17 +267,22 @@ namespace :build do
       end
       so_file = so_files.first
 
-      # Step 2: Copy to lib/#{gem_name}/ with Ruby version suffix
-      lib_dir = "lib/#{gem_name}"
+      # Step 2: Copy to lib/#{gem_name}/{major}.{minor}/ directory
+      # Use version-specific directory structure like official ruby-gnome gems
+      lib_dir = File.join("lib", gem_name, current_ruby_dot)
       FileUtils.mkdir_p(lib_dir)
 
-      # Name the .so with Ruby version for multi-version gems
-      versioned_so = File.join(lib_dir, "#{gem_name}-ruby#{current_ruby}.so")
+      # Always name the .so as "#{gem_name}.so", version selection happens via directory
+      versioned_so = File.join(lib_dir, "#{gem_name}.so")
       FileUtils.cp(so_file, versioned_so)
-      puts "  ✅ Compiled extension copied to lib/ as #{File.basename(versioned_so)}"
+      puts "  ✅ Compiled extension copied to lib/#{gem_name}/#{current_ruby_dot}/ as #{gem_name}.so"
+
+      # Step 2a: Extract DLL dependencies deterministically
+      puts "  2a. Extracting DLL dependencies deterministically..."
+      detect_and_copy_dll_dependencies(gem_name, versioned_so)
 
       # Step 3: Modify gemspec for binary platform and Ruby version
-      puts "  2. Preparing gemspec for Windows binary (Ruby #{current_ruby})..."
+      puts "  2. Preparing gemspec for Windows binary (Ruby #{current_ruby_dot})..."
       gemspec_path = "#{gem_name}.gemspec"
       gemspec_content = File.read(gemspec_path)
 
@@ -277,11 +309,11 @@ namespace :build do
         )
       end
 
-      # Add vendor files to includes
-      unless modified_gemspec.include?("vendor")
+      # Add .so files and vendor files to includes
+      unless modified_gemspec.include?("s.files += Dir.glob('lib/**/*.so')")
         modified_gemspec.gsub!(
           /^(\s*s\.files\s*\+=\s*Dir\.glob\("test\/\*\*\/\*"\))$/,
-          "\\1\n  s.files += Dir.glob('lib/**/vendor/**/*')"
+          "\\1\n  s.files += Dir.glob('lib/**/*.so')\n  s.files += Dir.glob('lib/**/vendor/**/*')"
         )
       end
 
@@ -309,7 +341,205 @@ namespace :build do
       # Don't remove lib_dir - versioned .so files stay for multi-Ruby gem
 
       puts "✅ Built: pkg/#{File.basename(built_gem)}"
-      puts "   (Ruby #{current_ruby} .so included for multi-Ruby support)"
+      puts "   (Ruby #{current_ruby_dot} .so included for multi-Ruby support)"
+
+    ensure
+      Dir.chdir(original_dir)
+    end
+  end
+
+  def detect_and_copy_dll_dependencies(gem_name, so_file)
+    # Determine architecture from environment
+    architecture = ENV['PLATFORM'] || (ENV['MSYSTEM'] == 'MINGW32' ? 'x86' : 'x64')
+
+    # Call the deterministic DLL extraction script
+    script_path = File.expand_path('../scripts/extract-dll-dependencies.rb', __FILE__)
+
+    puts "  2a. Extracting DLL dependencies deterministically..."
+    puts "      Script: #{script_path}"
+    puts "      Exists: #{File.exist?(script_path)}"
+
+    unless File.exist?(script_path)
+      puts "  ⚠️  WARNING: DLL extraction script not found at #{script_path}"
+      puts "     Skipping deterministic DLL extraction"
+      return
+    end
+
+    # Run the extraction script from the gem directory
+    cmd = "ruby #{script_path} #{gem_name} #{architecture}"
+    puts "      Command: #{cmd}"
+    puts "      Current directory: #{Dir.pwd}"
+    puts "      Environment: MSYSTEM=#{ENV['MSYSTEM'].inspect}, MINGW_PREFIX=#{ENV['MINGW_PREFIX'].inspect}, MSYSTEM_PREFIX=#{ENV['MSYSTEM_PREFIX'].inspect}"
+
+    result = system(cmd)
+    puts "      Result: #{result ? 'SUCCESS' : 'FAILED (exit code: ' + $?.exitstatus.to_s + ')'}"
+
+    unless result
+      puts "  ⚠️  WARNING: DLL extraction script failed"
+      puts "     This may result in missing DLL dependencies"
+    end
+  end
+
+  def consolidate_precompiled_gem(gem_name, gem_dir)
+    puts "Consolidating #{gem_name} from precompiled extensions..."
+    puts "  Current directory: #{Dir.pwd}"
+    puts "  Gem directory: #{gem_dir}"
+    puts ""
+
+    original_dir = Dir.pwd
+    begin
+      Dir.chdir(gem_dir)
+      puts "  Changed to gem directory: #{Dir.pwd}"
+
+      # Step 1: Verify precompiled .so files and vendor DLLs exist
+      puts "  1. Verifying precompiled extensions exist..."
+      lib_dir = File.join("lib", gem_name)
+
+      # Debug: Show what files actually exist in lib/
+      puts "     Checking for lib/#{gem_name}/ directory..."
+      if Dir.exist?(lib_dir)
+        puts "     ✓ Directory exists"
+        puts "     Contents:"
+        Dir.glob("#{lib_dir}/*").each do |item|
+          if File.directory?(item)
+            puts "       [DIR]  #{File.basename(item)}"
+          else
+            puts "       [FILE] #{File.basename(item)}"
+          end
+        end
+      else
+        puts "     ✗ Directory does not exist!"
+      end
+
+      so_files = Dir.glob("#{lib_dir}/*/#{gem_name}.so")
+
+      if so_files.empty?
+        puts "❌ No precompiled .so files found in #{lib_dir}/"
+        puts "   Expected structure: #{lib_dir}/{major}.{minor}/#{gem_name}.so"
+        puts "   (e.g., #{lib_dir}/3.3/#{gem_name}.so, #{lib_dir}/3.4/#{gem_name}.so)"
+        puts ""
+        puts "   DEBUG: Files in #{lib_dir}:"
+        Dir.glob("#{lib_dir}/**/*").each { |f| puts "     - #{f}" }
+        exit 1
+      end
+
+      puts "  ✅ Found #{so_files.count} precompiled extension(s):"
+      so_files.each { |f| puts "     - #{f}" }
+
+      # Check for vendor DLLs
+      vendor_dir = File.join("lib", gem_name, "vendor", "bin")
+      puts "     Checking for vendor DLLs in #{vendor_dir}/"
+      if Dir.exist?(vendor_dir)
+        puts "     ✓ Vendor directory exists"
+        dll_files = Dir.glob("#{vendor_dir}/*.dll")
+        if dll_files.empty?
+          puts "     ⚠️  WARNING: Vendor directory exists but contains no .dll files!"
+          puts "     This will cause LoadError 126 at runtime"
+        else
+          puts "  ✅ Found #{dll_files.count} vendor DLL(s):"
+          dll_files.each { |f| puts "     - #{File.basename(f)}" }
+        end
+      else
+        puts "     ✗ Vendor directory NOT found!"
+        puts "  ⚠️  WARNING: The gem will not have bundled dependencies"
+        puts "     This will cause LoadError 126 at runtime"
+      end
+
+      # Step 2: Modify gemspec for binary platform (don't compile)
+      puts "  2. Preparing gemspec for binary gem (no compilation)..."
+      gemspec_path = "#{gem_name}.gemspec"
+      unless File.exist?(gemspec_path)
+        puts "❌ Gemspec not found: #{gemspec_path}"
+        exit 1
+      end
+
+      gemspec_content = File.read(gemspec_path)
+      modified_gemspec = gemspec_content.dup
+
+      # Remove extension building (we have precompiled .so files)
+      modified_gemspec.gsub!(/^\s*s\.extensions\s*=\s*\[.*?\]\s*$/m, '# Extensions precompiled')
+
+      # Add platform specification if not present
+      unless modified_gemspec.include?("s.platform")
+        modified_gemspec.gsub!(
+          /^(\s*s\.version\s*=.*?)$/,
+          "\\1\n  s.platform = Gem::Platform.new('x64-mingw32')"
+        )
+      end
+
+      # Mark as multi-Ruby binary (no required_ruby_version constraint)
+      unless modified_gemspec.include?("Multi-Ruby")
+        modified_gemspec.gsub!(
+          /^(\s*s\.platform.*?)$/,
+          "\\1\n  # Multi-Ruby: Binary supports Ruby 3.3, 3.4 (detected at runtime)"
+        )
+      end
+
+      # Add .so files and vendor files to includes if not present
+      unless modified_gemspec.include?("s.files += Dir.glob('lib/**/*.so')")
+        modified_gemspec.gsub!(
+          /^(\s*s\.files\s*\+=\s*Dir\.glob\("test\/\*\*\/\*"\))$/,
+          "\\1\n  s.files += Dir.glob('lib/**/*.so')\n  s.files += Dir.glob('lib/**/vendor/**/*')"
+        )
+      end
+
+      # Write modified gemspec temporarily
+      binary_gemspec = "#{gem_name}-binary.gemspec"
+      File.write(binary_gemspec, modified_gemspec)
+      puts "  ✅ Binary gemspec prepared"
+
+      # Step 3: Build the gem (no compilation)
+      puts "  3. Building gem from precompiled extensions..."
+      system("gem build #{binary_gemspec}") || (puts "❌ Failed to build gem"; exit 1)
+
+      # Find and move the gem to pkg/
+      gem_files = Dir.glob("#{gem_name}-*.gem")
+      unless gem_files.any?
+        puts "❌ Failed to find built gem"
+        exit 1
+      end
+      built_gem = gem_files.last
+
+      # Verify it's actually a file, not a directory
+      unless File.file?(built_gem)
+        puts "❌ Built gem is not a file: #{built_gem}"
+        puts "   Is it a directory? #{File.directory?(built_gem)}"
+        exit 1
+      end
+
+      FileUtils.mv(built_gem, "#{original_dir}/#{PKG_DIR}/")
+
+      # Cleanup (keep lib_dir with precompiled .so files)
+      FileUtils.rm(binary_gemspec)
+
+      # Verify gem contents (for debugging)
+      built_gem_path = "#{original_dir}/#{PKG_DIR}/#{File.basename(built_gem)}"
+      puts ""
+      puts "  Verifying gem contents..."
+      puts "     Gem file: #{built_gem_path}"
+      puts "     Gem size: #{File.size(built_gem_path)} bytes"
+
+      # List contents of the gem
+      require 'rubygems/package'
+      begin
+        Gem::Package.open(built_gem_path) do |pkg|
+          so_count = 0
+          dll_count = 0
+          pkg.each do |entry|
+            so_count += 1 if entry.full_name.include?('.so')
+            dll_count += 1 if entry.full_name.include?('.dll')
+          end
+          puts "     Contains: #{so_count} .so file(s), #{dll_count} .dll file(s)"
+          if dll_count == 0
+            puts "     ⚠️  WARNING: No DLL files in gem! This will cause LoadError 126"
+          end
+        end
+      rescue => e
+        puts "     ⚠️  Could not inspect gem: #{e.message}"
+      end
+
+      puts "✅ Built: pkg/#{File.basename(built_gem)}"
+      puts "   (Contains #{so_files.count} precompiled Ruby extension(s))"
 
     ensure
       Dir.chdir(original_dir)

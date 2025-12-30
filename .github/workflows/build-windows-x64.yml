@@ -1,7 +1,10 @@
-name: Build Windows GTK3 Binary Gems
+name: Build Windows GTK3 Binary Gems (x64)
 
 on:
-  workflow_dispatch:  # Manual trigger only (use build-windows-x64.yml for automated builds)
+  workflow_dispatch:  # Manual trigger
+  push:
+    branches: [main, develop]
+  pull_request:
 
 jobs:
   build-windows-x64:
@@ -10,7 +13,7 @@ jobs:
 
     strategy:
       matrix:
-        ruby: ['3.3', '3.4']  # Ruby 4.0 not yet available on Windows runners
+        ruby: ['3.3', '3.4']
       fail-fast: false
 
     steps:
@@ -28,8 +31,8 @@ jobs:
         with:
           msystem: MINGW64
           update: true
-          release: false
-          install: |
+          location: ${{ runner.temp }}/msys2-${{ github.run_id }}
+          install: >-
             mingw-w64-x86_64-gtk3
             mingw-w64-x86_64-glib2
             mingw-w64-x86_64-toolchain
@@ -48,6 +51,39 @@ jobs:
           gem --version
           dir pkg/ || echo "pkg/ directory not created"
 
+      - name: Diagnose lib/glib2 after build
+        run: |
+          echo "=== Checking gems/glib2/lib/glib2 structure after build ==="
+          if (Test-Path gems/glib2/lib/glib2) {
+            echo "✓ gems/glib2/lib/glib2 exists"
+            echo ""
+            echo "=== Contents ==="
+            Get-ChildItem -Path gems/glib2/lib/glib2 -Force -Recurse | ForEach-Object {
+              $relativePath = $_.FullName -replace [regex]::Escape((Get-Item gems/glib2/lib/glib2).FullName), ""
+              $type = if ($_.PSIsContainer) { "[DIR]" } else { "[FILE]" }
+              $size = if ($_.PSIsContainer) { "" } else { "$($_.Length) bytes" }
+              echo "$type $relativePath $size"
+            }
+          } else {
+            echo "❌ gems/glib2/lib/glib2 does NOT exist"
+          }
+
+      - name: Test artifact glob patterns
+        run: |
+          echo "=== Testing glob patterns for artifact upload ==="
+          echo ""
+          echo "Pattern: gems/glib2/lib/glib2/**/glib2.so"
+          $matchedSo = @(Get-ChildItem -Path gems/glib2/lib/glib2 -Filter "glib2.so" -Recurse -Force)
+          echo "Matched $($matchedSo.Count) files:"
+          $matchedSo | ForEach-Object { echo "  - $($_.FullName)" }
+          echo ""
+          echo "Pattern: gems/glib2/lib/glib2/vendor/**/*"
+          $matchedVendor = @(Get-ChildItem -Path gems/glib2/lib/glib2/vendor -Recurse -Force)
+          echo "Matched $($matchedVendor.Count) files:"
+          $matchedVendor | ForEach-Object { echo "  - $($_.FullName)" }
+          echo ""
+          echo "Total files that will be uploaded: $($matchedSo.Count + $matchedVendor.Count)"
+
       - name: Run integration tests
         run: |
           ruby -I test test/glib2_spec.rb
@@ -57,77 +93,15 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: glib2-extensions-x64-${{ matrix.ruby }}
-          path: |
-            gems/glib2/lib/glib2/*/glib2.so
-            gems/glib2/lib/glib2/vendor/**/*
+          path: gems/glib2/lib/
           retention-days: 30
           if-no-files-found: warn
 
-  build-windows-x86:
-    name: Build binary gems (Windows x86, Ruby ${{ matrix.ruby }})
-    runs-on: windows-latest
-
-    strategy:
-      matrix:
-        ruby: ['3.3', '3.4']  # Ruby 4.0 not yet available on Windows runners
-      fail-fast: false
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Ruby ${{ matrix.ruby }} (x86)
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '${{ matrix.ruby }}'
-          bundler-cache: true
-
-      - name: Install MSYS2 (x86)
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW32
-          update: true
-          release: false
-          install: |
-            mingw-w64-i686-gtk3
-            mingw-w64-i686-glib2
-            mingw-w64-i686-toolchain
-            pkg-config
-
-      - name: Build glib2 binary gem (x86)
-        shell: msys2 {0}
-        run: |
-          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('glib2')"
-        env:
-          BINARY_GEM: 'true'
-          MSYSTEM: 'MINGW32'
-
-      - name: Show repository status
-        run: |
-          ruby --version
-          gem --version
-          dir pkg/ || echo "pkg/ directory not created"
-
-      - name: Run integration tests
-        run: |
-          ruby -I test test/glib2_spec.rb
-
-      - name: Upload compiled extension (x86, Ruby ${{ matrix.ruby }})
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: glib2-extensions-x86-${{ matrix.ruby }}
-          path: |
-            gems/glib2/lib/glib2/*/glib2.so
-            gems/glib2/lib/glib2/vendor/**/*
-          retention-days: 30
-          if-no-files-found: warn
-
-  # Consolidation job: combines all .so files into final gems
+  # Consolidation job: combines x64 .so files into final gems
   build-consolidated-gems:
-    name: Consolidate and build final gems
+    name: Consolidate and build final gems (x64)
     runs-on: windows-latest
-    needs: [build-windows-x64, build-windows-x86]
+    needs: [build-windows-x64]
     if: success()
 
     steps:
@@ -144,25 +118,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: glib2-extensions-x64-3.3
-          path: .
+          path: gems/glib2/lib/
 
       - name: Download x64 extensions (Ruby 3.4)
         uses: actions/download-artifact@v4
         with:
           name: glib2-extensions-x64-3.4
-          path: .
-
-      - name: Download x86 extensions (Ruby 3.3)
-        uses: actions/download-artifact@v4
-        with:
-          name: glib2-extensions-x86-3.3
-          path: .
-
-      - name: Download x86 extensions (Ruby 3.4)
-        uses: actions/download-artifact@v4
-        with:
-          name: glib2-extensions-x86-3.4
-          path: .
+          path: gems/glib2/lib/
 
       - name: Verify artifact extraction
         run: |
@@ -171,8 +133,11 @@ jobs:
             echo "✓ gems/glib2/lib/glib2 directory exists"
             echo ""
             echo "=== Contents of gems/glib2/lib/glib2 ==="
+            $basePath = (Get-Item gems/glib2/lib/glib2).FullName
+            $baseDepth = ($basePath -split '\\').Count
             Get-ChildItem -Path gems/glib2/lib/glib2 -Force -Recurse | ForEach-Object {
-              $depth = ($_.FullName -split '\\').Count - (Get-Item gems/glib2/lib/glib2 | Select-Object -ExpandProperty FullName -split '\\').Count
+              $itemDepth = ($_.FullName -split '\\').Count
+              $depth = $itemDepth - $baseDepth
               $indent = "  " * $depth
               $type = if ($_.PSIsContainer) { "[DIR]" } else { "[FILE]" }
               $size = if ($_.PSIsContainer) { "" } else { "$($_.Length) bytes" }
@@ -183,6 +148,34 @@ jobs:
             echo "Checking what was extracted to repository root:"
             Get-ChildItem -Path . -Force -Recurse -Depth 2 | Select-Object -ExpandProperty FullName
             exit 1
+          }
+
+      - name: Debug - Show all extracted files
+        run: |
+          echo "=== Artifacts downloaded - checking repo structure ==="
+          echo ""
+          echo "Looking for glib2.so files anywhere:"
+          Get-ChildItem -Path . -Filter "glib2.so" -Recurse -Force 2>$null | ForEach-Object { echo "  - $($_.FullName)" }
+          echo ""
+          echo "Looking for vendor directory:"
+          Get-ChildItem -Path . -Filter "vendor" -Directory -Recurse -Force 2>$null | ForEach-Object { echo "  - $($_.FullName)" }
+          echo ""
+          echo "Files in repo root (non-recursive):"
+          Get-ChildItem -Path . -Force 2>$null | ForEach-Object { echo "  $($_.FullName)" }
+
+      - name: Move downloaded artifacts to correct location
+        run: |
+          echo "=== Moving artifacts to gems/glib2/lib/glib2 ==="
+          if (Test-Path glib2) {
+            echo "✓ Found glib2 directory at repo root"
+            echo "  Copying to gems/glib2/lib/glib2..."
+            Copy-Item -Path glib2/* -Destination gems/glib2/lib/glib2 -Recurse -Force
+            echo "✓ Copy complete"
+            echo "  Cleaning up repo root glib2 directory..."
+            Remove-Item -Path glib2 -Recurse -Force
+            echo "✓ Cleanup complete"
+          } else {
+            echo "⚠ glib2 directory not found at repo root"
           }
 
       - name: Build consolidated x64 gem (multi-Ruby)
