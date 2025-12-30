@@ -28,9 +28,9 @@
 #
 # See docs/adr/0001-binary-gem-upstream-modifications.md for context.
 
+require 'English'
 require 'fileutils'
 require 'pathname'
-require 'set'
 
 # Extracts and bundles DLL dependencies for Windows binary gems
 #
@@ -66,24 +66,22 @@ class DLLDependencyExtractor
 
     # Check if this looks like a direct MSYS2 environment path (not the MSYS2 root)
     root_basename = File.basename(@msys2_root)
-    if %w[ucrt64 clang64 mingw64 mingw32].include?(root_basename)
-      # Direct environment path: /ucrt64, /clang64, /mingw64, /mingw32
-      @msys2_bin = File.join(@msys2_root, 'bin')
-    elsif @msys2_root.end_with?('mingw64') || @msys2_root.end_with?('mingw32')
-      # Path ends with architecture but is the full path
-      @msys2_bin = File.join(@msys2_root, 'bin')
-    else
-      # Traditional MSYS2 root: /c/msys64 or /msys64
-      # Need to append the architecture subdirectory
-      @msys2_bin = File.join(@msys2_root, architecture_to_msys2_path, 'bin')
-    end
+    @msys2_bin = if %w[ucrt64 clang64 mingw64 mingw32].include?(root_basename) ||
+                    @msys2_root.end_with?('mingw64') || @msys2_root.end_with?('mingw32')
+                   # Direct environment path or path ending with architecture
+                   File.join(@msys2_root, 'bin')
+                 else
+                   # Traditional MSYS2 root: /c/msys64 or /msys64
+                   # Need to append the architecture subdirectory
+                   File.join(@msys2_root, architecture_to_msys2_path, 'bin')
+                 end
 
-    puts "DLL Extraction Configuration:"
+    puts 'DLL Extraction Configuration:'
     puts "  Gem: #{@gem_name}"
     puts "  Architecture: #{@architecture}"
     puts "  MSYS2 Root: #{@msys2_root}"
     puts "  MSYS2 Bin: #{@msys2_bin}"
-    puts ""
+    puts ''
   end
 
   # Extract and copy all required DLLs for the gem
@@ -110,18 +108,18 @@ class DLLDependencyExtractor
     dll_names = extract_dll_names(so_file)
     if dll_names.empty?
       puts "⚠️  WARNING: No DLL dependencies found in #{so_file}"
-      puts "   This might indicate a static build or an issue with the compilation"
+      puts '   This might indicate a static build or an issue with the compilation'
       return
     end
 
     puts "✓ Found #{dll_names.count} DLL dependencies:"
     dll_names.each { |dll| puts "    - #{dll}" }
-    puts ""
+    puts ''
 
     # Step 3: Copy DLLs to vendor directory
     copy_dlls(dll_names)
 
-    puts "✅ DLL extraction complete"
+    puts '✅ DLL extraction complete'
   end
 
   private
@@ -138,8 +136,8 @@ class DLLDependencyExtractor
     # We need the parent directory (MSYSTEM_PREFIX or the root)
 
     # Try to detect from MSYSTEM_PREFIX first (the MSYS2 root)
-    if ENV['MSYSTEM_PREFIX']
-      return ENV['MSYSTEM_PREFIX'] if Dir.exist?(ENV['MSYSTEM_PREFIX'])
+    if ENV.fetch('MSYSTEM_PREFIX', nil) && Dir.exist?(ENV.fetch('MSYSTEM_PREFIX', nil))
+      return ENV.fetch('MSYSTEM_PREFIX', nil)
     end
 
     # If MINGW_PREFIX is set (e.g., /mingw64), use it directly
@@ -154,16 +152,17 @@ class DLLDependencyExtractor
     possible_roots = [
       'C:/msys64',
       '/c/msys64',
-      '/msys64',  # MSYS2 can also be at root in some Docker/Actions setups
+      '/msys64' # MSYS2 can also be at root in some Docker/Actions setups
     ].compact
 
     root = possible_roots.find { |path| Dir.exist?(path) }
 
     unless root
-      puts "❌ ERROR: Could not detect MSYS2 installation"
-      puts "   Environment: MSYSTEM_PREFIX=#{ENV['MSYSTEM_PREFIX'].inspect}, MINGW_PREFIX=#{ENV['MINGW_PREFIX'].inspect}"
+      puts '❌ ERROR: Could not detect MSYS2 installation'
+      puts "   Environment: MSYSTEM_PREFIX=#{ENV['MSYSTEM_PREFIX'].inspect}, " \
+           "MINGW_PREFIX=#{ENV['MINGW_PREFIX'].inspect}"
       puts "   Tried paths: #{possible_roots.join(', ')}"
-      puts "   Set MSYSTEM_PREFIX or MINGW_PREFIX environment variable explicitly"
+      puts '   Set MSYSTEM_PREFIX or MINGW_PREFIX environment variable explicitly'
       exit 1
     end
 
@@ -215,13 +214,13 @@ class DLLDependencyExtractor
     # Use objdump to find all imported DLLs
     # objdump -p shows imports, grep for DLL names
 
-    puts "    Locating objdump..."
+    puts '    Locating objdump...'
 
     # Try to find objdump - be explicit about what we're checking
     objdump_candidates = [
       "#{@msys2_bin}/objdump",           # Full path in MSYS2 bin
       "#{@msys2_bin}/objdump.exe",       # Windows executable
-      "objdump",                          # In system PATH
+      'objdump' # In system PATH
     ]
 
     objdump_cmd = nil
@@ -234,25 +233,25 @@ class DLLDependencyExtractor
       end
 
       # Try running it (in case PATH has it but File.exist? fails)
-      if system("#{candidate} --version > /dev/null 2>&1")
-        objdump_cmd = candidate
-        puts "    ✓ Found objdump in PATH: #{candidate}"
-        break
-      end
+      next unless system("#{candidate} --version > /dev/null 2>&1")
+
+      objdump_cmd = candidate
+      puts "    ✓ Found objdump in PATH: #{candidate}"
+      break
     end
 
     unless objdump_cmd
-      puts "    ⚠️  WARNING: objdump not found"
+      puts '    ⚠️  WARNING: objdump not found'
       puts "       Tried: #{objdump_candidates.inspect}"
       puts "       MSYS2 Bin: #{@msys2_bin}"
-      puts "       Cannot perform DLL dependency analysis"
-      puts "       Falling back to no DLL bundling"
+      puts '       Cannot perform DLL dependency analysis'
+      puts '       Falling back to no DLL bundling'
       return []
     end
 
     puts "    Running: #{objdump_cmd} -p #{so_file}"
     output = `#{objdump_cmd} -p "#{so_file}" 2>&1`
-    exit_status = $?.exitstatus
+    exit_status = $CHILD_STATUS.exitstatus
 
     if exit_status != 0
       puts "    ⚠️  objdump exited with status #{exit_status}"
@@ -261,14 +260,14 @@ class DLLDependencyExtractor
     end
 
     if output.empty?
-      puts "    ⚠️  objdump returned empty output"
+      puts '    ⚠️  objdump returned empty output'
       return []
     end
 
     puts "    ✓ Objdump output received (#{output.lines.count} lines)"
-    puts "    Raw output (first 20 lines):"
+    puts '    Raw output (first 20 lines):'
     output.lines.first(20).each { |line| puts "      #{line.rstrip}" }
-    puts "    ..." if output.lines.count > 20
+    puts '    ...' if output.lines.count > 20
 
     # Extract DLL names from objdump output
     # Lines like: DLL Name: msvcrt.dll
@@ -317,7 +316,7 @@ class DLLDependencyExtractor
 
     # Copy DLLs and resolve transitive dependencies
     to_process = dll_names.dup
-    max_iterations = 10  # Prevent infinite loops
+    max_iterations = 10 # Prevent infinite loops
     iteration = 0
 
     while to_process.any? && iteration < max_iterations
@@ -327,7 +326,7 @@ class DLLDependencyExtractor
       new_to_process = []
 
       to_process.each do |dll_name|
-        next if copied.include?(dll_name)  # Already copied
+        next if copied.include?(dll_name) # Already copied
 
         src = find_dll_path(dll_name)
 
@@ -353,16 +352,16 @@ class DLLDependencyExtractor
       to_process = new_to_process
     end
 
-    puts ""
+    puts ''
     puts "Copied: #{copied.count}/#{all_dlls_to_copy.count} DLLs (#{iteration} iterations)"
 
-    if not_found.any?
-      puts "⚠️  WARNING: Could not find #{not_found.count} DLL(s):"
-      not_found.each { |dll| puts "    - #{dll}" }
-      puts ""
-      puts "This may cause runtime failures if these DLLs are required."
-      puts "Check the compilation environment or build configuration."
-    end
+    return unless not_found.any?
+
+    puts "⚠️  WARNING: Could not find #{not_found.count} DLL(s):"
+    not_found.each { |dll| puts "    - #{dll}" }
+    puts ''
+    puts 'This may cause runtime failures if these DLLs are required.'
+    puts 'Check the compilation environment or build configuration.'
   end
 
   # Find full path to DLL in MSYS2 directory structure
@@ -373,9 +372,9 @@ class DLLDependencyExtractor
     # Try to find DLL in standard locations
     search_paths = [
       File.join(@msys2_bin, dll_name),           # Primary: MSYS2 bin
-      File.join(@msys2_bin, dll_name + ".exe"),  # With .exe extension
+      File.join(@msys2_bin, "#{dll_name}.exe"),  # With .exe extension
       File.join(@msys2_root, 'bin', dll_name),   # Root MSYS2 bin
-      File.join(@msys2_root, 'usr', 'bin', dll_name),  # usr/bin
+      File.join(@msys2_root, 'usr', 'bin', dll_name) # usr/bin
     ]
 
     search_paths.each do |path|
@@ -392,37 +391,36 @@ class DLLDependencyExtractor
   def extract_dll_names_from_file(dll_path)
     # Extract DLL dependencies from a file using objdump
     # This handles transitive dependencies
-    begin
-      output = `#{find_objdump} -p "#{dll_path}" 2>&1`
-      return [] if output.empty?
 
-      # Extract DLL names from objdump output
-      dll_names = output.scan(/DLL Name: ([^\s]+)/i).flatten.map(&:strip).uniq
+    output = `#{find_objdump} -p "#{dll_path}" 2>&1`
+    return [] if output.empty?
 
-      # Filter out system DLLs
-      excluded = %w[
-        kernel32.dll
-        ntdll.dll
-        msvcrt.dll
-        advapi32.dll
-        user32.dll
-        gdi32.dll
-        ole32.dll
-        oleaut32.dll
-        shell32.dll
-        comctl32.dll
-        comdlg32.dll
-        mpr.dll
-        winspool.dll
-        ws2_32.dll
-        wsock32.dll
-      ]
+    # Extract DLL names from objdump output
+    dll_names = output.scan(/DLL Name: ([^\s]+)/i).flatten.map(&:strip).uniq
 
-      dll_names.reject { |dll| excluded.any? { |excl| dll.downcase == excl.downcase } }
-    rescue => e
-      # If objdump fails, return empty list
-      []
-    end
+    # Filter out system DLLs
+    excluded = %w[
+      kernel32.dll
+      ntdll.dll
+      msvcrt.dll
+      advapi32.dll
+      user32.dll
+      gdi32.dll
+      ole32.dll
+      oleaut32.dll
+      shell32.dll
+      comctl32.dll
+      comdlg32.dll
+      mpr.dll
+      winspool.dll
+      ws2_32.dll
+      wsock32.dll
+    ]
+
+    dll_names.reject { |dll| excluded.any? { |excl| dll.downcase == excl.downcase } }
+  rescue StandardError
+    # If objdump fails, return empty list
+    []
   end
 
   # Find objdump executable
@@ -433,7 +431,7 @@ class DLLDependencyExtractor
     candidates = [
       "#{@msys2_bin}/objdump",
       "#{@msys2_bin}/objdump.exe",
-      "objdump",
+      'objdump'
     ]
 
     candidates.each do |candidate|
@@ -441,23 +439,23 @@ class DLLDependencyExtractor
       return candidate if system("#{candidate} --version > /dev/null 2>&1")
     end
 
-    "objdump"  # Fallback
+    'objdump' # Fallback
   end
 end
 
 # Main execution
-if $0 == __FILE__
+if $PROGRAM_NAME == __FILE__
   gem_name = ARGV[0]
   architecture = ARGV[1]
   msys2_root = ARGV[2]
 
   unless gem_name && architecture
-    puts "Usage: ruby #{File.basename($0)} <gem_name> <architecture> [msys2_root]"
-    puts ""
-    puts "Examples:"
-    puts "  ruby #{File.basename($0)} glib2 x64"
-    puts "  ruby #{File.basename($0)} glib2 x86"
-    puts "  ruby #{File.basename($0)} glib2 x64 /c/msys64"
+    puts "Usage: ruby #{File.basename($PROGRAM_NAME)} <gem_name> <architecture> [msys2_root]"
+    puts ''
+    puts 'Examples:'
+    puts "  ruby #{File.basename($PROGRAM_NAME)} glib2 x64"
+    puts "  ruby #{File.basename($PROGRAM_NAME)} glib2 x86"
+    puts "  ruby #{File.basename($PROGRAM_NAME)} glib2 x64 /c/msys64"
     exit 1
   end
 
