@@ -1,27 +1,124 @@
 ================================================================================
-COPY THIS PROMPT FOR THE NEXT CLAUDE SESSION
+X86 BUILD WORKFLOW CONTINUATION - NEXT SESSION
 ================================================================================
 
-I'm continuing work on the Lich5 GTK3 Binary Gems project.
+CURRENT STATUS (Session 2025-12-30):
+✅ x64 workflow fully functional and tested
+   - Build succeeds for Ruby 3.3 and 3.4
+   - DLL extraction working (6-7 DLLs per Ruby version)
+   - Artifact consolidation produces multi-Ruby gem
+   - Gem installs without dev toolkit on clean Ruby 3.4.8
+   - glib2 loads and creates GLib objects successfully
 
-Repository: https://github.com/Lich5/lich5-gtk3-gems
-Local path: /home/user/lich5-gtk3-gems
+BRANCH: claude/x64-x86-paths-qDgSG
+LATEST COMMITS:
+- 071aa92: fix: Move downloaded artifacts from repo root to gems/glib2/lib/glib2 before consolidation
+- c22a925: fix: Download artifacts to gems/glib2/lib/ to preserve directory structure during extraction
 
-Previous session completed:
-- Full repository scaffolding created
-- All files committed locally (2 commits ready to push)
-- Ready for Phase 1: Windows POC
+KEY DECISIONS MADE (DO NOT DEVIATE):
+1. TWO SEPARATE WORKFLOWS (not a combined matrix)
+   - .github/workflows/build-windows-x64.yml (PRIMARY - x64 only)
+   - .github/workflows/build-windows.yml (TEST - kept for reference, dispatch-only)
 
-CRITICAL FILES TO READ FIRST:
-1. /home/user/lich5-gtk3-gems/.claude/HANDOFF_2025-12-28.md
-2. /home/user/lich5-gtk3-gems/.claude/PROJECT_CONTEXT.md
+2. ARTIFACT MANAGEMENT APPROACH (critical for next phase)
+   - Upload from: gems/glib2/lib/ (preserves glib2/ directory structure)
+   - Download to: gems/glib2/lib/ (consolidation job)
+   - MANDATORY STEP: Relocate files from repo root to gems/glib2/lib/glib2/ before consolidation
+     (GitHub Actions extracts artifacts to repo root regardless of download path)
+   - PowerShell Copy-Item with -Recurse -Force required
 
-IMMEDIATE TASKS:
-1. Push the 2 local commits to GitHub (origin/main)
-2. Verify GitHub Actions CI workflow passes
-3. Import glib2 source from ruby-gnome
-4. Begin binary gem build implementation
+3. MSYS2 ISOLATION (prevents runner state contamination)
+   - Location: ${{ runner.temp }}/msys2-${{ github.run_id }}
+   - This prevents cleanup race conditions when workflows run concurrently
 
-Please start by reading the handoff file, then push the commits to GitHub.
+4. RUBY MATRIX (fixed, no Ruby 4.0)
+   - Versions: ['3.3', '3.4'] only
+   - Do NOT add 4.0 - GH runners still don't support it
+
+================================================================================
+IMMEDIATE TASK: CREATE X86 WORKFLOW
+================================================================================
+
+DO NOT TEMPLATE - use build-windows-x64.yml as base, modify only what's necessary:
+
+STEPS:
+1. Copy .github/workflows/build-windows-x64.yml → .github/workflows/build-windows-x86.yml
+
+2. ONLY change these lines:
+   a) Line ~8: on: [push, pull_request] (same as x64 - auto-trigger)
+   b) Line ~20: name: Build glib2 x86 extensions
+   c) Line ~22: mingw-arch: mingw32 (was mingw64)
+   d) Line ~24: prefix: i686 (was x86_64)
+   e) Line ~80: MSYS2 location (change mingw64 to mingw32):
+      location: ${{ runner.temp }}/msys2-${{ github.run_id }}-x86
+   f) Line ~94: build:gem task - add architecture arg if needed
+      (check if Rakefile's build:gem accepts arch parameter, likely needs: rake build:gem x86)
+   g) Artifact names: Change all "glib2-extensions-x64-" → "glib2-extensions-x86-"
+   h) Job name references: change [build-windows-x64] → [build-windows-x86]
+      (in consolidation job needs statement)
+   i) Consolidation job: needs: [build-windows-x86] (not x64)
+
+3. DO NOT change:
+   - Ruby matrix
+   - DLL extraction script reference (same script handles x86)
+   - Artifact relocation logic (same approach)
+   - Consolidation task naming
+
+4. Known x86-specific issues to watch for:
+   - MINGW32 environment is more restrictive than MINGW64
+   - Some dependencies may not have 32-bit builds available
+   - Watch for "unable to find library" or "file not found" errors in build phase
+   - If build fails with unresolved DLLs, check if 32-bit version of dependency is available on runner
+
+5. Testing x86 workflow:
+   - Manually dispatch from Actions tab first
+   - Watch for MSYS2 installation issues (less common but possible)
+   - Verify DLL extraction produces expected files
+   - Confirm artifact consolidation completes
+   - Test final gem installation on 32-bit Ruby environment if available
+
+================================================================================
+FILES MODIFIED THIS SESSION (for reference):
+================================================================================
+
+.github/workflows/build-windows-x64.yml:
+- Created new x64-only workflow (replaces old combined matrix)
+- Added unique MSYS2 location per run (github.run_id)
+- Fixed PowerShell artifact verification syntax
+- Added mandatory artifact relocation step (Copy-Item from repo root to gems/glib2/lib/glib2)
+- Consolidation job downloads to gems/glib2/lib/ instead of .
+
+scripts/extract-dll-dependencies.rb:
+- Added missing: require 'set' (line 23)
+
+.github/workflows/build-windows.yml:
+- Changed triggers: push/pull_request → workflow_dispatch only
+- Removed Ruby 4.0 from matrix
+- Kept for reference/testing, not auto-triggered
+
+================================================================================
+CRITICAL NOTES FOR NEXT DRIVER:
+================================================================================
+
+❌ DO NOT:
+- Use templates or scaffolding generators
+- Start with blank files and work through errors again
+- Add Ruby 4.0 to any matrix
+- Skip the artifact relocation step
+- Download artifacts to . (repo root) without relocating
+
+✅ DO:
+- Modify existing x64 workflow file only where MINGW/architecture differs
+- Keep artifact handling strategy identical (relocation is non-negotiable)
+- Test x86 build manually before assuming it works
+- Check build logs for architecture-specific failures
+- Document any x86-specific issues in this file for future reference
+
+If x86 build fails:
+1. Check MSYS2 installation completed (unique location should prevent conflicts)
+2. Check MinGW32 toolchain availability vs MinGW64
+3. Verify DLL extraction found expected files (may differ from x64)
+4. Check consolidation can find relocated artifacts in gems/glib2/lib/glib2/
+5. If all else fails: manually run build:gem task on local x86 Windows environment to debug
 
 ================================================================================
