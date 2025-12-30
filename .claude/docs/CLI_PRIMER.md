@@ -23,21 +23,38 @@
 
 ## Commit Requirements
 
-**Before committing, your commit message MUST follow this format:**
+**Commit Message Format:** Conventional Commits with gem-specific scope
 
 ```
-[YOUR COMMIT CONVENTION]
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer]
 ```
+
+**Types:**
+- `feat` - New functionality
+- `fix` - Bug fixes
+- `docs` - Documentation changes
+- `test` - Adding or updating tests
+- `chore` - Maintenance tasks (gitignore, dependencies, etc.)
+- `refactor` - Code restructuring without behavior change
+
+**Scopes:**
+- Gem name: `glib2`, `gtk3`, `nokogiri`, `mechanize`, etc.
+- `all` - Only for PR titles, not commits
 
 **Examples:**
 ```bash
-# Customize these examples for your convention
-git commit -m "feat: add user authentication"
-git commit -m "fix: resolve login timeout issue"
-git commit -m "chore: update dependencies"
+git commit -m "feat(glib2): add smoke tests for glib2"
+git commit -m "fix(gtk3): correct DLL bundling paths"
+git commit -m "docs(nokogiri): document build process"
+git commit -m "test(glib2): add upstream test execution"
+git commit -m "chore(all): update .gitignore for gem artifacts"
 ```
 
-**Why:** [Explain why your convention matters - release automation, changelog generation, etc.]
+**Why:** Scoped commits provide traceability. Easy to filter history by gem: `git log --grep="(glib2)"`
 
 ---
 
@@ -130,14 +147,14 @@ rubocop -a                  # Auto-fix linting issues
 ```bash
 git checkout main
 git pull origin main
-git checkout -b claude/descriptive-name-SESSION_ID
+git checkout -b claude/build-glib2-gem-SESSION_ID
 # ... make changes ...
 git add [files]
-git commit -m "feat: description"  # Conventional Commits
+git commit -m "feat(glib2): add smoke tests"  # Scoped by gem
 # Validate before push
 rake test:all && rubocop
-git push -u origin claude/descriptive-name-SESSION_ID
-# Create PR: feat(all): or fix(all):
+git push -u origin claude/build-glib2-gem-SESSION_ID
+# Create PR with title: feat(all): add glib2 binary gem build pipeline
 ```
 
 ---

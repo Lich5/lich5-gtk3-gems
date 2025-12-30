@@ -151,41 +151,50 @@ This document is your foundation. If you detect session compaction or context lo
 # Branch from main with session ID
 git checkout main
 git pull origin main
-git checkout -b claude/descriptive-name-SESSION_ID
+git checkout -b claude/build-glib2-gem-SESSION_ID
 
 # Make changes
 # Write/update build validation tests
 git add [files]
-git commit -m "feat: description" # or "fix: description"
+git commit -m "feat(glib2): add smoke tests" # Scoped by gem
 
 # Validate before push
 rake test:all
 rubocop
-rake build:gem[gem-name]  # if applicable
+rake build:gem[glib2]  # if applicable
 
 # Push to origin
-git push -u origin claude/descriptive-name-SESSION_ID
+git push -u origin claude/build-glib2-gem-SESSION_ID
 
-# Create PR with title: feat(all): or fix(all):
+# Create PR with title: feat(all): add glib2 binary gem build pipeline
 ```
 
 ### Commit Message Format
 
+**Conventional Commits with gem-specific scope:**
+
 ```
-[YOUR CONVENTION]
+<type>(<scope>): <description>
+
+[optional body]
 ```
+
+**Types:** feat, fix, docs, test, chore, refactor
+
+**Scopes:** Gem name (glib2, gtk3, nokogiri, etc.) or `all` for cross-cutting changes
 
 **Examples:**
 ```
-# Customize these examples
-feat: add user authentication
-fix: resolve login timeout
-chore: update dependencies
-
-# Or if you use ticket numbers:
-PROJ-123: implement user search
-PROJ-124: fix pagination bug
+feat(glib2): add smoke tests for glib2
+fix(gtk3): correct DLL bundling paths
+docs(nokogiri): document build process
+test(glib2): add upstream test execution
+chore(all): update .gitignore for gem artifacts
 ```
+
+**PR Titles:** Use `feat(all):` or `fix(all):` to indicate project-wide scope
+
+**Why:** Scoped commits enable filtering by gem (`git log --grep="(glib2)"`) and provide clear traceability
 
 ---
 
