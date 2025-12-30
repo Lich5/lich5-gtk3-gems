@@ -53,7 +53,8 @@ git commit -m "chore: update dependencies"
 3. **Well-Architected** - Follow SOLID principles, avoid duplication (DRY)
 4. **Zero Regression** - All existing gem builds must continue to work
 5. **Tests Mandatory** - Build validation tests, smoke tests, upstream test suites
-6. **Quality Gates** - See Quality Standards section below
+6. **Upstream Source Integrity** - `gems/` is read-only; modifications require discussion, approval, and ADR
+7. **Quality Gates** - See Quality Standards section below
 
 ---
 
@@ -88,8 +89,9 @@ This project builds and validates binary gems from upstream sources. We do NOT t
   - **Upstream Tests** - Run maintainer's test suite (if provided) to prove build correctness
 - [ ] Code follows SOLID + DRY principles
 - [ ] Documentation clear and complete (YARD for Ruby, inline comments)
-- [ ] RuboCop passes (Ruby code only)
+- [ ] RuboCop passes (automation code only: Rakefile, scripts/, test/ - never gems/)
 - [ ] Zero regression verified (all existing gems still build)
+- [ ] No modifications to `gems/` without ADR documentation
 - [ ] Committed with proper format
 
 ---
@@ -120,7 +122,7 @@ rake build:gem[glib2]       # Build specific gem
 rake test:smoke[glib2]      # Smoke test a gem (require + basic API)
 rake test:upstream[glib2]   # Run upstream test suite
 rake test:all               # Run all validation tests
-rubocop                     # Lint Ruby code
+rubocop                     # Lint automation code (Rakefile, scripts/, test/)
 rubocop -a                  # Auto-fix linting issues
 ```
 

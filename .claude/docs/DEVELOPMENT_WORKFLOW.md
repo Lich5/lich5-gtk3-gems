@@ -71,8 +71,9 @@ rm .claude/work-units/CURRENT.md
 
 - [ ] Build validation tests written/updated for build changes
 - [ ] Tests pass: `rake test:all` or gem-specific tests
-- [ ] RuboCop clean: `rubocop` (Ruby code only)
+- [ ] RuboCop clean: `rubocop` (automation code only: Rakefile, scripts/, test/)
 - [ ] Gem builds successfully: `rake build:gem[gem-name]`
+- [ ] No modifications to `gems/` unless authorized and documented in ADR
 - [ ] Only necessary files included in commit
 - [ ] Commit messages follow Conventional Commits (see below)
 - [ ] YARD documentation complete for new Ruby code
@@ -109,9 +110,10 @@ Binary gem tests require target platform (e.g., Windows for x64-mingw32 gems). T
 
 Every change must pass:
 1. **Build Validation** - `rake test:all` passing (or gem-specific tests)
-2. **RuboCop** - Style compliance for Ruby code
+2. **RuboCop** - Style compliance for automation code (Rakefile, scripts/, test/)
 3. **Gem Build** - `rake build:gem[name]` succeeds
-4. **Logical validation** - Code follows project patterns from CLI_PRIMER and SOCIAL_CONTRACT
+4. **Source Integrity** - No modifications to `gems/` without ADR documentation
+5. **Logical validation** - Code follows project patterns from CLI_PRIMER and SOCIAL_CONTRACT
 
 ---
 

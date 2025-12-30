@@ -137,6 +137,31 @@ Then: Ask one question, wait for answer, move to next
 
 ---
 
+### 12. Upstream Source Code Integrity
+
+**Product Owner Expectation:** Gem source code in `gems/` is sacred. We build and package, we don't modify. Any changes to upstream source code require discussion, explicit decision, and ADR documentation.
+
+**Development Response:**
+- Treat `gems/` as read-only unless explicitly authorized
+- Before modifying any upstream source:
+  1. Discuss rationale with Product Owner
+  2. Get explicit approval
+  3. Document decision in `docs/adr/NNNN-title.md` (ADR format)
+  4. Apply minimal patch
+  5. Document patch location and reason in affected gem's documentation
+- Our code is in `Rakefile`, `scripts/`, `test/` - that's what we own and lint
+- Upstream code stays pristine for maintainability and updates
+
+**Why this matters:**
+- Maintains traceability to upstream maintainers
+- Prevents drift that breaks future updates
+- Makes merging upstream changes possible
+- Documents the "why" behind necessary modifications
+
+**RuboCop scope:** Only lint our automation code (Rakefile, scripts/, test/), never `gems/`
+
+---
+
 ## How to Reference This Contract
 
 **For Product Owner:**
@@ -148,6 +173,8 @@ Reference this document at the start of each engagement to recall mutual expecta
 ---
 
 ## Modifications
+
+**2025-12-30:** Added Expectation 12 - Upstream Source Code Integrity. Establishes that gem source code in `gems/` is read-only unless explicitly authorized. Any modifications require discussion, approval, and ADR documentation. Clarifies RuboCop scope to automation code only.
 
 **2025-12-30:** Added Expectation 11 - Iterative Dialog for Complex Inputs. Establishes protocol for gathering multiple pieces of information from Product Owner: summarize first, then iterate through questions one at a time at Product Owner's pace.
 

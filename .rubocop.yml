@@ -1,0 +1,60 @@
+# RuboCop Configuration for Lich5 GTK3 Binary Gems
+#
+# SCOPE: This linter applies ONLY to our automation code:
+#   - Rakefile
+#   - scripts/
+#   - test/
+#
+# EXCLUDED: Upstream gem source code in gems/ is NEVER linted.
+#   See SOCIAL_CONTRACT.md Expectation #12 for rationale.
+
+AllCops:
+  TargetRubyVersion: 3.3
+  NewCops: enable
+  SuggestExtensions: false
+
+  # CRITICAL: Exclude upstream gem source code
+  Exclude:
+    - 'gems/**/*'          # Never lint upstream gem sources
+    - 'vendor/**/*'        # Never lint bundled vendor libraries
+    - 'pkg/**/*'           # Never lint build output
+    - 'tmp/**/*'           # Never lint temporary files
+    - '.git/**/*'
+
+  # Include our automation code
+  Include:
+    - 'Rakefile'
+    - 'scripts/**/*.rb'
+    - 'test/**/*.rb'
+    - '**/*.rake'
+
+# Style preferences for our automation code
+Style/StringLiterals:
+  EnforcedStyle: single_quotes
+
+Style/Documentation:
+  Enabled: true
+
+Metrics/BlockLength:
+  Exclude:
+    - 'Rakefile'
+    - 'test/**/*'
+    - '**/*.rake'
+
+Layout/LineLength:
+  Max: 120
+  AllowedPatterns:
+    - '^\s*#'  # Allow long comments
+
+# Be reasonable about method length in build scripts
+Metrics/MethodLength:
+  Max: 25
+  Exclude:
+    - 'Rakefile'
+    - '**/*.rake'
+
+# Be reasonable about class length in test files
+Metrics/ClassLength:
+  Max: 150
+  Exclude:
+    - 'test/**/*'
