@@ -68,6 +68,22 @@ jobs:
             echo "❌ gems/glib2/lib/glib2 does NOT exist"
           }
 
+      - name: Test artifact glob patterns
+        run: |
+          echo "=== Testing glob patterns for artifact upload ==="
+          echo ""
+          echo "Pattern: gems/glib2/lib/glib2/**/glib2.so"
+          $matchedSo = @(Get-ChildItem -Path gems/glib2/lib/glib2 -Filter "glib2.so" -Recurse -Force)
+          echo "Matched $($matchedSo.Count) files:"
+          $matchedSo | ForEach-Object { echo "  - $($_.FullName)" }
+          echo ""
+          echo "Pattern: gems/glib2/lib/glib2/vendor/**/*"
+          $matchedVendor = @(Get-ChildItem -Path gems/glib2/lib/glib2/vendor -Recurse -Force)
+          echo "Matched $($matchedVendor.Count) files:"
+          $matchedVendor | ForEach-Object { echo "  - $($_.FullName)" }
+          echo ""
+          echo "Total files that will be uploaded: $($matchedSo.Count + $matchedVendor.Count)"
+
       - name: Run integration tests
         run: |
           ruby -I test test/glib2_spec.rb
