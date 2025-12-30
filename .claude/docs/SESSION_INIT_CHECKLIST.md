@@ -78,8 +78,11 @@ Key facts about Lich5 GTK3 Binary Gems:
 - Uses **Build Validation Testing** - validates build correctness, not upstream functionality
 - Uses **RuboCop** for Ruby code style compliance
 - Branching: `claude/*` for Claude work, PRs are work-unit oriented (5 or less commits)
-- Commit format: **Conventional Commits** (feat:, fix:, chore:, docs:, etc.)
-- Documentation: **YARD** for Ruby code, inline comments for clarity
+- Commit format: **Conventional Commits** with gem-specific scopes (feat(glib2):, fix(gtk3):, etc.)
+- Documentation: **Comprehensive and non-negotiable** - see `docs/DOCUMENTATION_STANDARDS.md`
+  - YARD for Ruby, workflow headers for scripts, inline comments for "why"
+  - Removing documentation is regression
+  - Multi-file updates required when changes affect integration
 - Zero regression: All existing gem builds must continue to work
 
 If you're uncertain about any practice, check these documents first.

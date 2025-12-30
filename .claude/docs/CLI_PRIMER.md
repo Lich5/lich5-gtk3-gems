@@ -105,7 +105,14 @@ This project builds and validates binary gems from upstream sources. We do NOT t
   - **Smoke Tests** - `require 'gem-name'` succeeds, basic API calls work
   - **Upstream Tests** - Run maintainer's test suite (if provided) to prove build correctness
 - [ ] Code follows SOLID + DRY principles
-- [ ] Documentation clear and complete (YARD for Ruby, inline comments)
+- [ ] Documentation clear and complete:
+  - **YARD** for all Ruby methods (params, return, examples)
+  - **Inline comments** explain "why" (not "what")
+  - **Workflow headers** for all scripts (intent, input, output, major functions)
+  - **ADR references** in code for deviations from project norms
+  - **Multi-file updates** when changes affect integration/docs
+  - **Preserve existing docs** - removal is regression
+  - See `docs/DOCUMENTATION_STANDARDS.md` for complete requirements
 - [ ] RuboCop passes (automation code only: Rakefile, scripts/, test/ - never gems/)
 - [ ] Zero regression verified (all existing gems still build)
 - [ ] No modifications to `gems/` without ADR documentation

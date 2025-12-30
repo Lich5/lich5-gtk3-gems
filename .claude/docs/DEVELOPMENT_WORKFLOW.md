@@ -104,9 +104,15 @@ All work must be:
 - [ ] RuboCop clean: `rubocop` (automation code only: Rakefile, scripts/, test/)
 - [ ] Gem builds successfully: `rake build:gem[gem-name]`
 - [ ] No modifications to `gems/` unless authorized and documented in ADR
+- [ ] Documentation complete (see `docs/DOCUMENTATION_STANDARDS.md`):
+  - YARD for Ruby methods (params, return, examples)
+  - Workflow headers for scripts (intent, input, output, major functions)
+  - Inline comments for "why" (not "what")
+  - ADR references in code for deviations
+  - Multi-file updates completed (integration/project docs)
+  - Existing documentation preserved (removal = regression)
 - [ ] Only necessary files included in commit
 - [ ] Commit messages follow Conventional Commits (see below)
-- [ ] YARD documentation complete for new Ruby code
 - [ ] `git status` shows clean working tree (or only intended changes)
 
 ---
