@@ -78,7 +78,7 @@ jobs:
         with:
           name: glib2-extensions-x64-${{ matrix.ruby }}
           path: |
-            gems/glib2/lib/glib2/*/glib2.so
+            gems/glib2/lib/glib2/**/glib2.so
             gems/glib2/lib/glib2/vendor/**/*
           retention-days: 30
           if-no-files-found: warn
