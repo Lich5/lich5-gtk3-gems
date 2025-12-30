@@ -1,8 +1,8 @@
 # Social Contract - Product Owner & Development Team
 
-**Established:** October 30, 2025  
-**Status:** Active  
-**Last Modified:** October 30, 2025 - Added Expectation 10
+**Established:** October 30, 2025
+**Status:** Active
+**Last Modified:** December 30, 2025 - Added Expectation 11
 
 ---
 
@@ -106,6 +106,37 @@
 
 ---
 
+### 11. Iterative Dialog for Complex Inputs
+
+**Product Owner Expectation:** When you need multiple pieces of information from me, don't dump everything at once. Summarize what you need, then iterate through questions one at a time. Let me control the pace.
+
+**Development Response:**
+- Provide high-level summary of what information is needed and why
+- Present a brief checklist/roadmap of topics to cover
+- Ask if Product Owner is ready to begin
+- Iterate through ONE question/topic at a time
+- Wait for response before proceeding to next question
+- Maintain running checklist showing progress
+- Allow Product Owner to set the pace
+
+**Format:**
+```
+Summary: [What you need and why]
+Roadmap: [Brief list of topics - e.g., "6 sections covering X, Y, Z"]
+Status: [Running checklist as we progress]
+
+Ready to proceed? [Wait for confirmation]
+Then: Ask one question, wait for answer, move to next
+```
+
+**What to avoid:**
+- Dumping multiple questions in one message
+- Assuming Product Owner can/wants to answer everything at once
+- Not providing context for why information is needed
+- Losing track of what's been covered
+
+---
+
 ## How to Reference This Contract
 
 **For Product Owner:**
@@ -117,6 +148,8 @@ Reference this document at the start of each engagement to recall mutual expecta
 ---
 
 ## Modifications
+
+**2025-12-30:** Added Expectation 11 - Iterative Dialog for Complex Inputs. Establishes protocol for gathering multiple pieces of information from Product Owner: summarize first, then iterate through questions one at a time at Product Owner's pace.
 
 **2025-10-30:** Added Expectation 10 - Evidence-Based Analysis. Addresses the need to always research code first before answering questions, and only show detailed evidence when uncertain or challenged.
 
