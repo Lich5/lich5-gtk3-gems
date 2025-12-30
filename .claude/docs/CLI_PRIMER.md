@@ -128,11 +128,16 @@ rubocop -a                  # Auto-fix linting issues
 
 **Git workflow:**
 ```bash
-git checkout -b [branch-name]
+git checkout main
+git pull origin main
+git checkout -b claude/descriptive-name-SESSION_ID
 # ... make changes ...
 git add [files]
-git commit -m "[your convention]"
-git push -u origin [branch-name]
+git commit -m "feat: description"  # Conventional Commits
+# Validate before push
+rake test:all && rubocop
+git push -u origin claude/descriptive-name-SESSION_ID
+# Create PR: feat(all): or fix(all):
 ```
 
 ---

@@ -13,15 +13,25 @@ All work must be:
 
 ## Branch Strategy
 
-PRs are individual work-unit oriented, and stand alone.  If testing is done properly PRs should have 5 or less commits.
+**Model:** GitHub Flow (simplified)
 
-Examples:
-- Git Flow (main, develop, feature/, hotfix/, release/)
-- GitHub Flow (main, feature branches)
-- Trunk-based development
-- Custom strategy
+**Main Branch:** `main` - Production-ready code
 
-**Key Principle:** [YOUR PRINCIPLE - e.g., "Always branch from develop", "Keep branches short-lived", etc.]
+**Feature Branches:** `claude/descriptive-name-SESSION_ID`
+- Session ID is required for push authentication
+- Example: `claude/build-glib2-gem-1AEBM`
+- Keep descriptive-name short and clear
+
+**PR Requirements:**
+- Individual work-unit oriented, stand alone
+- 5 or less commits if testing is done properly
+- Title follows convention: `feat(all):` or `fix(all):`
+
+**Key Principles:**
+- Always branch from `main`
+- Keep branches short-lived (complete work unit, then merge)
+- One work unit per branch/PR
+- Validate before pushing (see Pre-Push Validation Checklist)
 
 ---
 
@@ -138,14 +148,25 @@ This document is your foundation. If you detect session compaction or context lo
 ### Creating a Feature Branch
 
 ```bash
-# Customize for your branching strategy
-git checkout -b feature/[name] [base-branch]
+# Branch from main with session ID
+git checkout main
+git pull origin main
+git checkout -b claude/descriptive-name-SESSION_ID
+
 # Make changes
-# Add tests
+# Write/update build validation tests
 git add [files]
-git commit -m "[your convention]"
-# Validate (tests + linter)
-git push -u origin feature/[name]
+git commit -m "feat: description" # or "fix: description"
+
+# Validate before push
+rake test:all
+rubocop
+rake build:gem[gem-name]  # if applicable
+
+# Push to origin
+git push -u origin claude/descriptive-name-SESSION_ID
+
+# Create PR with title: feat(all): or fix(all):
 ```
 
 ### Commit Message Format
