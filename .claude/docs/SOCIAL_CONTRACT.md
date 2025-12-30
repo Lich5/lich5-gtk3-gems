@@ -1,8 +1,8 @@
 # Social Contract - Product Owner & Development Team
 
-**Established:** October 30, 2025  
-**Status:** Active  
-**Last Modified:** October 30, 2025 - Added Expectation 10
+**Established:** October 30, 2025
+**Status:** Active
+**Last Modified:** December 30, 2025 - Added Expectation 11
 
 ---
 
@@ -106,6 +106,95 @@
 
 ---
 
+### 11. Iterative Dialog for Complex Inputs
+
+**Product Owner Expectation:** When you need multiple pieces of information from me, don't dump everything at once. Summarize what you need, then iterate through questions one at a time. Let me control the pace.
+
+**Development Response:**
+- Provide high-level summary of what information is needed and why
+- Present a brief checklist/roadmap of topics to cover
+- Ask if Product Owner is ready to begin
+- Iterate through ONE question/topic at a time
+- Wait for response before proceeding to next question
+- Maintain running checklist showing progress
+- Allow Product Owner to set the pace
+
+**Format:**
+```
+Summary: [What you need and why]
+Roadmap: [Brief list of topics - e.g., "6 sections covering X, Y, Z"]
+Status: [Running checklist as we progress]
+
+Ready to proceed? [Wait for confirmation]
+Then: Ask one question, wait for answer, move to next
+```
+
+**What to avoid:**
+- Dumping multiple questions in one message
+- Assuming Product Owner can/wants to answer everything at once
+- Not providing context for why information is needed
+- Losing track of what's been covered
+
+---
+
+### 12. Upstream Source Code Integrity
+
+**Product Owner Expectation:** Gem source code in `gems/` is sacred. We build and package, we don't modify. Any changes to upstream source code require discussion, explicit decision, and ADR documentation.
+
+**Development Response:**
+- Treat `gems/` as read-only unless explicitly authorized
+- Before modifying any upstream source:
+  1. Discuss rationale with Product Owner
+  2. Get explicit approval
+  3. Document decision in `docs/adr/NNNN-title.md` (ADR format)
+  4. Apply minimal patch
+  5. Document patch location and reason in affected gem's documentation
+- Our code is in `Rakefile`, `scripts/`, `test/` - that's what we own and lint
+- Upstream code stays pristine for maintainability and updates
+
+**Why this matters:**
+- Maintains traceability to upstream maintainers
+- Prevents drift that breaks future updates
+- Makes merging upstream changes possible
+- Documents the "why" behind necessary modifications
+
+**RuboCop scope:** Only lint our automation code (Rakefile, scripts/, test/), never `gems/`
+
+---
+
+### 13. Proactive Token Monitoring
+
+**Product Owner Expectation:** I hate losing session context. Monitor token consumption and warn me at thresholds so we can wrap up meaningfully and preserve context for the next session.
+
+**Development Response:**
+- Monitor token usage continuously (via system warnings after tool operations)
+- Report at thresholds (approximate ranges acceptable):
+  - **~50%** - "Checkpoint: Halfway through budget, X work remaining"
+  - **~75%** - "Warning: 3/4 consumed, recommend planning wrap-up"
+  - **~85%** - "Critical: Plan to complete current task and summarize"
+  - **~90%** - "Urgent: Finish current work unit, create handoff summary"
+  - **~95%** - "Emergency: Immediate wrap-up, minimal new work"
+
+**At each threshold:**
+- State current token usage (X used, Y remaining, Z%)
+- Summarize work completed so far
+- Estimate tokens needed for remaining planned work
+- Recommend: continue, pause for commit, or prepare handoff summary
+
+**Token monitoring mechanics:**
+- System provides actual token counts via warnings (not estimates)
+- Warnings appear after tool operations
+- Use periodic tool operations to check status
+- Conservative recommendations ("better safe than sorry")
+
+**What to avoid:**
+- Waiting until context compaction is imminent
+- Not warning about approaching exhaustion
+- Assuming Product Owner is monitoring
+- Precision obsession (50%-ish is fine, not 50.00%)
+
+---
+
 ## How to Reference This Contract
 
 **For Product Owner:**
@@ -117,6 +206,12 @@ Reference this document at the start of each engagement to recall mutual expecta
 ---
 
 ## Modifications
+
+**2025-12-30:** Added Expectation 13 - Proactive Token Monitoring. Establishes protocol for monitoring token consumption and warning at thresholds (~50%, ~75%, ~85%, ~90%, ~95%) to prevent context loss. Claude monitors via system warnings and recommends wrap-up actions.
+
+**2025-12-30:** Added Expectation 12 - Upstream Source Code Integrity. Establishes that gem source code in `gems/` is read-only unless explicitly authorized. Any modifications require discussion, approval, and ADR documentation. Clarifies RuboCop scope to automation code only.
+
+**2025-12-30:** Added Expectation 11 - Iterative Dialog for Complex Inputs. Establishes protocol for gathering multiple pieces of information from Product Owner: summarize first, then iterate through questions one at a time at Product Owner's pace.
 
 **2025-10-30:** Added Expectation 10 - Evidence-Based Analysis. Addresses the need to always research code first before answering questions, and only show detailed evidence when uncertain or challenged.
 

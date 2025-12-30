@@ -1,16 +1,16 @@
 # Claude Development Primer
 
-**Last Updated:** [DATE]
-**Project:** [YOUR PROJECT NAME]
-**Product Owner:** [YOUR NAME/TEAM]
+**Last Updated:** December 30, 2025
+**Project:** Lich5 GTK3 Binary Gems
+**Product Owner:** Doug
 
 ---
 
 ## Your Role
 
 **Claude (Execution & Testing):**
-- Implement code based on work unit specifications
-- Execute tests ([YOUR TEST FRAMEWORK])
+- Implement build automation based on work unit specifications
+- Execute build validation tests (upstream minitest/Test::Unit suites + smoke tests)
 - Commit to designated branches
 - Report blockers or questions to Product Owner
 
@@ -23,21 +23,38 @@
 
 ## Commit Requirements
 
-**Before committing, your commit message MUST follow this format:**
+**Commit Message Format:** Conventional Commits with gem-specific scope
 
 ```
-[YOUR COMMIT CONVENTION]
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer]
 ```
+
+**Types:**
+- `feat` - New functionality
+- `fix` - Bug fixes
+- `docs` - Documentation changes
+- `test` - Adding or updating tests
+- `chore` - Maintenance tasks (gitignore, dependencies, etc.)
+- `refactor` - Code restructuring without behavior change
+
+**Scopes:**
+- Gem name: `glib2`, `gtk3`, `nokogiri`, `mechanize`, etc.
+- `all` - Only for PR titles, not commits
 
 **Examples:**
 ```bash
-# Customize these examples for your convention
-git commit -m "feat: add user authentication"
-git commit -m "fix: resolve login timeout issue"
-git commit -m "chore: update dependencies"
+git commit -m "feat(glib2): add smoke tests for glib2"
+git commit -m "fix(gtk3): correct DLL bundling paths"
+git commit -m "docs(nokogiri): document build process"
+git commit -m "test(glib2): add upstream test execution"
+git commit -m "chore(all): update .gitignore for gem artifacts"
 ```
 
-**Why:** [Explain why your convention matters - release automation, changelog generation, etc.]
+**Why:** Scoped commits provide traceability. Easy to filter history by gem: `git log --grep="(glib2)"`
 
 ---
 
@@ -51,75 +68,100 @@ git commit -m "chore: update dependencies"
 1. **Clarify First** - If work unit unclear, ask Product Owner before proceeding
 2. **Evidence-Based** - Research code before making changes
 3. **Well-Architected** - Follow SOLID principles, avoid duplication (DRY)
-4. **Zero Regression** - All existing workflows must continue unchanged
-5. **Tests Mandatory** - [YOUR TEST TYPES: unit, functional, integration, etc.]
-6. **Quality Gates** - See QUALITY-GATES section below
+4. **Zero Regression** - All existing gem builds must continue to work
+5. **Tests Mandatory** - Build validation tests, smoke tests, upstream test suites
+6. **Upstream Source Integrity** - `gems/` is read-only; modifications require discussion, approval, and ADR
+7. **Quality Gates** - See Quality Standards section below
 
 ---
 
 ## Project Context
 
-**System:** [YOUR PROJECT DESCRIPTION]
+**System:** Binary gem build system for GTK3 and native Ruby gems (nokogiri, mechanize) for Lich5 distribution
 
-**Architecture:** [YOUR TECH STACK AND KEY ARCHITECTURAL PATTERNS]
+**Architecture:**
+- Build automation (Rake tasks, PowerShell/Bash scripts)
+- Upstream gem sources (ruby-gnome, nokogiri maintainers)
+- Binary packaging for Windows (x64-mingw32), macOS (darwin), Linux (future)
+- Vendor library bundling (GTK3 DLLs from MSYS2)
 
-**Current Focus:** [CURRENT PROJECT PHASE OR PRIORITIES]
+**Current Focus:** Phase 1 - Windows POC (build first gem: glib2)
 
-**Key Constraint:** [YOUR KEY CONSTRAINTS - e.g., zero regression, backward compatibility, etc.]
+**Key Constraint:** Zero regression - existing gem builds must remain functional. Gems must install on Windows without devkit/build tools.
 
 ---
 
 ## Quality Standards
 
+**Testing Philosophy:**
+
+This project builds and validates binary gems from upstream sources. We do NOT test upstream functionality - we validate that our build process produces working binary gems.
+
 **Before marking work complete:**
 
 - [ ] All acceptance criteria met
-- [ ] Tests written and passing
-  - [Test type 1: e.g., Unit tests for new components]
-  - [Test type 2: e.g., Integration tests for workflows]
-  - [Test type 3: e.g., Regression tests for existing functionality]
-- [ ] Code follows [YOUR ARCHITECTURE PRINCIPLES]
-- [ ] No code duplication (DRY)
-- [ ] [YOUR DOCUMENTATION STANDARD: e.g., JSDoc, YARD, docstrings]
-- [ ] [YOUR LINTER: e.g., ESLint, RuboCop, Black] passes
-- [ ] Zero regression verified
+- [ ] Build validation tests passing:
+  - **Build Validation** - Gem compiles, all DLLs bundled, correct platform tag
+  - **Smoke Tests** - `require 'gem-name'` succeeds, basic API calls work
+  - **Upstream Tests** - Run maintainer's test suite (if provided) to prove build correctness
+- [ ] Code follows SOLID + DRY principles
+- [ ] Documentation clear and complete:
+  - **YARD** for all Ruby methods (params, return, examples)
+  - **Inline comments** explain "why" (not "what")
+  - **Workflow headers** for all scripts (intent, input, output, major functions)
+  - **ADR references** in code for deviations from project norms
+  - **Multi-file updates** when changes affect integration/docs
+  - **Preserve existing docs** - removal is regression
+  - See `docs/DOCUMENTATION_STANDARDS.md` for complete requirements
+- [ ] RuboCop passes (automation code only: Rakefile, scripts/, test/ - never gems/)
+- [ ] Zero regression verified (all existing gems still build)
+- [ ] No modifications to `gems/` without ADR documentation
 - [ ] Committed with proper format
 
 ---
 
 ## File Locations
 
-**Customize these paths for your project:**
-
 **Code:**
-- Main: `/path/to/your/source/`
-- [Component type 1]: `/path/to/component1/`
-- Tests: `/path/to/your/tests/`
+- Gem sources: `gems/` (glib2/, gtk3/, nokogiri/, etc.)
+- Build scripts: `scripts/` (download-gtk3-libs-windows.ps1, etc.)
+- Build system: `Rakefile`
+- Vendor libraries: `vendor/windows/x64/`, `vendor/macos/`, etc.
+- Build output: `pkg/` (gitignored)
+- Integration tests: `test/`
 
 **Documentation:**
-- Context: `/.claude/docs/`
-- Work units: `/.claude/work-units/CURRENT.md`
+- Context: `.claude/docs/`
+- Work units: `.claude/work-units/CURRENT.md`
+- Project docs: `docs/` (BUILDING.md, ARCHITECTURE.md, etc.)
 
 ---
 
 ## Common Commands
 
-**Testing:**
+**Build & Test:**
 ```bash
-# Customize these for your test framework
-npm test                    # Run all tests
-npm test path/to/test       # Run specific test
-npm run lint                # Linting
-npm run lint:fix            # Auto-fix linting issues
+rake status                 # Check repository state
+rake build:gem[glib2]       # Build specific gem
+rake test:smoke[glib2]      # Smoke test a gem (require + basic API)
+rake test:upstream[glib2]   # Run upstream test suite
+rake test:all               # Run all validation tests
+rubocop                     # Lint automation code (Rakefile, scripts/, test/)
+rubocop -a                  # Auto-fix linting issues
 ```
 
 **Git workflow:**
 ```bash
-git checkout -b [branch-name]
+git checkout main
+git pull origin main
+git checkout -b claude/build-glib2-gem-SESSION_ID
 # ... make changes ...
 git add [files]
-git commit -m "[your convention]"
-git push -u origin [branch-name]
+git commit -m "feat(glib2): add smoke tests"  # Scoped by gem
+# Validate before push
+rake test:all && rubocop
+git push -u origin claude/build-glib2-gem-SESSION_ID
+# Create PR with title: feat(all): add glib2 binary gem build pipeline
 ```
 
 ---

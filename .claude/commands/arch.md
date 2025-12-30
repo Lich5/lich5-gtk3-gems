@@ -27,6 +27,7 @@ Focus on:
 - Breaking down complex features into implementable tasks
 - Creating work units with clear specifications
 - Identifying technical risks and trade-offs
+- Creating ADRs for architectural decisions (see `docs/adr/`)
 
 **Toolkit restrictions:**
 - Research and analysis tools available
@@ -35,6 +36,11 @@ Focus on:
 - **No git commits/pushes** - use `/code` for implementation
 
 **Create work units in:** `.claude/work-units/CURRENT.md`
+
+**Documentation requirements:**
+- Design decisions → ADRs in `docs/adr/`
+- Workflow specifications → Include headers (intent, input, output, major functions)
+- See `docs/DOCUMENTATION_STANDARDS.md` for requirements
 
 **Remember:** Archive completed work units before creating new ones.
 

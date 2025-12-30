@@ -30,10 +30,14 @@ Comprehensive code review focusing on quality, maintainability, and best practic
 - Integration test appropriateness
 
 **Documentation:**
-- Code comments where needed
-- Method/class documentation
-- README updates if applicable
-- Architecture decision records (if used)
+- Code comments where needed (explain "why", not "what")
+- YARD documentation for Ruby methods (@param, @return, @example)
+- Workflow headers for scripts (intent, input, output, major functions)
+- ADR references in code for deviations from project norms
+- **Documentation preservation:** Existing docs retained (removal = regression)
+- Multi-file updates when changes affect integration/project docs
+- README/project doc updates if applicable
+- See `docs/DOCUMENTATION_STANDARDS.md` for complete requirements
 
 **Git:**
 - Commit message quality

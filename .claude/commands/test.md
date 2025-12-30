@@ -4,27 +4,65 @@ description: Testing assistant for comprehensive test coverage
 
 # Testing Mode
 
-Focus on comprehensive testing for your codebase.
+**Focus:** Build validation testing for binary gems.
 
-**Testing priorities:**
-1. Write clear, descriptive test cases
-2. Follow testing framework best practices
-3. Test both happy paths and edge cases
-4. Mock external dependencies appropriately
-5. Ensure tests are fast and isolated
-6. Verify test coverage for critical paths
+**Testing Philosophy:**
 
-**Common patterns:**
-- Unit tests for individual methods/classes
-- Integration tests for component interactions
-- Regression tests for bug fixes
-- Fixture/factory usage for test data
-- Proper setup/teardown in before/after blocks
+We validate that our BUILD PROCESS produces working binary gems.
+We do NOT test upstream functionality - maintainers own that.
 
-**Quality standards:**
-- Tests should be as well-documented as production code
-- One assertion per test (generally)
-- Clear failure messages
-- Independent and repeatable
+---
 
-What would you like me to test or help debug?
+## Test Types
+
+### 1. Build Validation Tests
+- Gem compiles without errors
+- All required DLLs bundled
+- Correct platform tag (x64-mingw32, etc.)
+- Package structure correct
+- Vendor libraries present
+
+### 2. Smoke Tests
+- `require 'gem-name'` succeeds
+- Basic API calls work
+- Native extension loads correctly
+- Proves compilation succeeded
+
+### 3. Upstream Test Execution
+- Run maintainer's minitest/Test::Unit suites
+- Validates our build didn't break their code
+- Use their tests as proof of correctness
+- NOT our responsibility to fix their tests
+
+---
+
+## Success Criteria
+
+- ✅ Gem builds without errors
+- ✅ Gem installs on clean target platform (no devkit/build tools)
+- ✅ `require` succeeds
+- ✅ Upstream test suite passes (when available)
+- ✅ Basic smoke test demonstrates functionality
+
+---
+
+## Common Commands
+
+```bash
+rake test:smoke[gem-name]      # Smoke test (require + basic API)
+rake test:upstream[gem-name]   # Run upstream test suite
+rake test:all                  # Run all validation tests
+rake build:gem[gem-name]       # Build gem for testing
+```
+
+---
+
+## What We DON'T Test
+
+- Feature development (we don't write features)
+- Edge cases in upstream code (maintainers own that)
+- Comprehensive integration testing (beyond "does it load?")
+
+---
+
+What would you like me to test or validate?
