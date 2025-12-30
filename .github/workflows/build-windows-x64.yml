@@ -51,6 +51,23 @@ jobs:
           gem --version
           dir pkg/ || echo "pkg/ directory not created"
 
+      - name: Diagnose lib/glib2 after build
+        run: |
+          echo "=== Checking gems/glib2/lib/glib2 structure after build ==="
+          if (Test-Path gems/glib2/lib/glib2) {
+            echo "✓ gems/glib2/lib/glib2 exists"
+            echo ""
+            echo "=== Contents ==="
+            Get-ChildItem -Path gems/glib2/lib/glib2 -Force -Recurse | ForEach-Object {
+              $relativePath = $_.FullName -replace [regex]::Escape((Get-Item gems/glib2/lib/glib2).FullName), ""
+              $type = if ($_.PSIsContainer) { "[DIR]" } else { "[FILE]" }
+              $size = if ($_.PSIsContainer) { "" } else { "$($_.Length) bytes" }
+              echo "$type $relativePath $size"
+            }
+          } else {
+            echo "❌ gems/glib2/lib/glib2 does NOT exist"
+          }
+
       - name: Run integration tests
         run: |
           ruby -I test test/glib2_spec.rb
