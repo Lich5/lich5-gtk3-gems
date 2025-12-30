@@ -188,6 +188,30 @@ namespace :build do
     end
   end
 
+  desc 'Consolidate precompiled extensions and build gem (no compilation)'
+  task :consolidate_gem, [:name] do |t, args|
+    gem_name = args[:name]
+
+    unless ALL_GEMS.include?(gem_name)
+      puts "❌ Unknown gem: #{gem_name}"
+      puts "Available gems: #{ALL_GEMS.join(', ')}"
+      exit 1
+    end
+
+    gem_dir = "#{GEMS_DIR}/#{gem_name}"
+    unless Dir.exist?(gem_dir)
+      puts "❌ Gem source not found: #{gem_dir}"
+      puts "Run: rake gems:setup"
+      exit 1
+    end
+
+    # Create pkg directory
+    FileUtils.mkdir_p(PKG_DIR)
+
+    # This task is for consolidating precompiled extensions, not compiling
+    consolidate_precompiled_gem(gem_name, gem_dir)
+  end
+
   private
 
   def build_source_gem(gem_name, gem_dir)
@@ -209,9 +233,24 @@ namespace :build do
     end
   end
 
+  # Build Windows binary gem for a single Ruby version
+  #
+  # Compiles native extension, extracts DLL dependencies, and packages as binary gem.
+  # The gem uses version-specific directory structure (lib/<gem>/3.3/, lib/<gem>/3.4/)
+  # to support multiple Ruby versions in a single gem package.
+  #
+  # @param gem_name [String] Name of the gem (e.g., 'glib2')
+  # @param gem_dir [String] Path to gem source directory
+  # @return [void]
+  # @raise [SystemExit] if compilation or build fails
+  #
+  # @example Build glib2 for current Ruby version
+  #   build_binary_gem('glib2', 'gems/glib2')
   def build_binary_gem(gem_name, gem_dir)
-    current_ruby = "#{RUBY_VERSION.major}.#{RUBY_VERSION.minor}"
-    puts "Building #{gem_name} (Windows binary gem for Ruby #{current_ruby})..."
+    # Parse Ruby version for directory naming (e.g., "3.4.1" → "3.4")
+    ruby_parts = RUBY_VERSION.split('.')
+    current_ruby_dot = "#{ruby_parts[0]}.#{ruby_parts[1]}"
+    puts "Building #{gem_name} (Windows binary gem for Ruby #{current_ruby_dot})..."
 
     unless Gem.win_platform?
       puts "⚠️  Binary gem build can only run on Windows"
@@ -224,7 +263,7 @@ namespace :build do
       Dir.chdir(gem_dir)
 
       # Step 1: Compile native extension
-      puts "  1. Compiling native extension for Ruby #{current_ruby}..."
+      puts "  1. Compiling native extension for Ruby #{current_ruby_dot}..."
       system("ruby extconf.rb") unless File.exist?("Makefile")
       unless File.exist?("Makefile")
         puts "❌ Failed to generate Makefile"
@@ -240,59 +279,23 @@ namespace :build do
       end
       so_file = so_files.first
 
-      # Step 2: Copy to lib/#{gem_name}/ with Ruby version suffix
-      lib_dir = "lib/#{gem_name}"
+      # Step 2: Copy to lib/#{gem_name}/{major}.{minor}/ directory
+      # Use version-specific directory structure (matches upstream ruby-gnome pattern)
+      lib_dir = File.join("lib", gem_name, current_ruby_dot)
       FileUtils.mkdir_p(lib_dir)
 
-      # Name the .so with Ruby version for multi-version gems
-      versioned_so = File.join(lib_dir, "#{gem_name}-ruby#{current_ruby}.so")
+      # Always name the .so as "#{gem_name}.so", version selection happens via directory
+      versioned_so = File.join(lib_dir, "#{gem_name}.so")
       FileUtils.cp(so_file, versioned_so)
-      puts "  ✅ Compiled extension copied to lib/ as #{File.basename(versioned_so)}"
+      puts "  ✅ Compiled extension copied to lib/#{gem_name}/#{current_ruby_dot}/ as #{gem_name}.so"
 
-      # Step 3: Modify gemspec for binary platform and Ruby version
-      puts "  2. Preparing gemspec for Windows binary (Ruby #{current_ruby})..."
-      gemspec_path = "#{gem_name}.gemspec"
-      gemspec_content = File.read(gemspec_path)
+      # Step 2a: Extract DLL dependencies deterministically
+      puts "  2a. Extracting DLL dependencies deterministically..."
+      detect_and_copy_dll_dependencies(gem_name, versioned_so)
 
-      # Create a modified gemspec for binary build
-      modified_gemspec = gemspec_content.dup
-
-      # Remove extension building (we're including precompiled .so)
-      modified_gemspec.gsub!(/^\s*s\.extensions\s*=\s*\[.*?\]\s*$/m, '# Extensions precompiled')
-
-      # Add platform specification
-      unless modified_gemspec.include?("s.platform")
-        modified_gemspec.gsub!(
-          /^(\s*s\.version\s*=.*?)$/,
-          "\\1\n  s.platform = Gem::Platform.new('x64-mingw32')"
-        )
-      end
-
-      # Multi-Ruby support: Single gem works with Ruby 3.3, 3.4, and 4.0
-      # (No required_ruby_version constraint - loader detects at runtime)
-      unless modified_gemspec.include?("required_ruby_version")
-        modified_gemspec.gsub!(
-          /^(\s*s\.platform.*?)$/,
-          "\\1\n  # Multi-Ruby: Supports 3.3, 3.4, 4.0 (detected at runtime)"
-        )
-      end
-
-      # Add vendor files to includes
-      unless modified_gemspec.include?("vendor")
-        modified_gemspec.gsub!(
-          /^(\s*s\.files\s*\+=\s*Dir\.glob\("test\/\*\*\/\*"\))$/,
-          "\\1\n  s.files += Dir.glob('lib/**/vendor/**/*')"
-        )
-      end
-
-      # Write modified gemspec temporarily
-      binary_gemspec = "#{gem_name}-binary.gemspec"
-      File.write(binary_gemspec, modified_gemspec)
-      puts "  ✅ Binary gemspec prepared"
-
-      # Step 4: Build the binary gem
-      puts "  3. Building binary gem..."
-      system("gem build #{binary_gemspec}") || (puts "❌ Failed to build gem"; exit 1)
+      # Step 3: Build the binary gem (gemspec already modified for binary distribution)
+      puts "  2. Building binary gem..."
+      system("gem build #{gem_name}.gemspec") || (puts "❌ Failed to build gem"; exit 1)
 
       # Find and move the gem to pkg/
       gem_files = Dir.glob("#{gem_name}-*.gem")
@@ -303,16 +306,119 @@ namespace :build do
       built_gem = gem_files.last
       FileUtils.mv(built_gem, "#{original_dir}/#{PKG_DIR}/")
 
-      # Cleanup (keep lib_dir with versioned .so for multi-Ruby support)
-      FileUtils.rm(binary_gemspec)
+      # Cleanup compiled .so from ext/ (keep lib_dir with versioned .so)
       FileUtils.rm(so_file)
-      # Don't remove lib_dir - versioned .so files stay for multi-Ruby gem
 
       puts "✅ Built: pkg/#{File.basename(built_gem)}"
-      puts "   (Ruby #{current_ruby} .so included for multi-Ruby support)"
+      puts "   (Ruby #{current_ruby_dot} .so included for multi-Ruby support)"
 
     ensure
       Dir.chdir(original_dir)
+    end
+  end
+
+  # Consolidate precompiled extensions from multiple Ruby versions into final gem
+  #
+  # This task is for GitHub Actions workflows that compile .so files for multiple
+  # Ruby versions (3.3, 3.4) in parallel, then consolidate them into a single
+  # multi-Ruby binary gem. No compilation happens in this task.
+  #
+  # @param gem_name [String] Name of the gem (e.g., 'glib2')
+  # @param gem_dir [String] Path to gem source directory
+  # @return [void]
+  # @raise [SystemExit] if precompiled .so files are missing or build fails
+  #
+  # @example Consolidate glib2 after parallel compilation
+  #   consolidate_precompiled_gem('glib2', 'gems/glib2')
+  def consolidate_precompiled_gem(gem_name, gem_dir)
+    puts "Consolidating #{gem_name} from precompiled extensions..."
+
+    original_dir = Dir.pwd
+    begin
+      Dir.chdir(gem_dir)
+
+      # Step 1: Verify precompiled .so files and vendor DLLs exist
+      puts "  1. Verifying precompiled extensions exist..."
+      lib_dir = File.join("lib", gem_name)
+
+      so_files = Dir.glob("#{lib_dir}/*/#{gem_name}.so")
+
+      if so_files.empty?
+        puts "❌ No precompiled .so files found in #{lib_dir}/"
+        puts "   Expected structure: #{lib_dir}/{major}.{minor}/#{gem_name}.so"
+        puts "   (e.g., #{lib_dir}/3.3/#{gem_name}.so, #{lib_dir}/3.4/#{gem_name}.so)"
+        exit 1
+      end
+
+      puts "  ✅ Found #{so_files.count} precompiled extension(s):"
+      so_files.each { |f| puts "     - #{f}" }
+
+      # Check for vendor DLLs
+      vendor_dir = File.join("lib", gem_name, "vendor", "bin")
+      if Dir.exist?(vendor_dir)
+        dll_files = Dir.glob("#{vendor_dir}/*.dll")
+        if dll_files.any?
+          puts "  ✅ Found #{dll_files.count} vendor DLL(s)"
+        else
+          puts "  ⚠️  WARNING: Vendor directory exists but contains no .dll files!"
+        end
+      else
+        puts "  ⚠️  WARNING: No vendor/bin directory found - gem may fail at runtime"
+      end
+
+      # Step 2: Build the gem (gemspec already modified for binary distribution)
+      puts "  2. Building consolidated gem..."
+      system("gem build #{gem_name}.gemspec") || (puts "❌ Failed to build gem"; exit 1)
+
+      # Find and move the gem to pkg/
+      gem_files = Dir.glob("#{gem_name}-*.gem")
+      unless gem_files.any?
+        puts "❌ Failed to find built gem"
+        exit 1
+      end
+      built_gem = gem_files.last
+      FileUtils.mv(built_gem, "#{original_dir}/#{PKG_DIR}/")
+
+      puts "✅ Built: pkg/#{File.basename(built_gem)}"
+      puts "   (Multi-Ruby support: #{so_files.count} Ruby versions included)"
+
+    ensure
+      Dir.chdir(original_dir)
+    end
+  end
+
+  # Detect and copy DLL dependencies for Windows binary gem
+  #
+  # Uses scripts/extract-dll-dependencies.rb to analyze the compiled .so file
+  # and bundle required Windows DLLs (and their transitive dependencies) into
+  # lib/<gem>/vendor/bin/ for distribution.
+  #
+  # @param gem_name [String] Name of the gem (e.g., 'glib2')
+  # @param so_file [String] Path to compiled .so file (relative to gem dir)
+  # @return [void]
+  #
+  # @example Extract DLLs for glib2
+  #   detect_and_copy_dll_dependencies('glib2', 'lib/glib2/3.3/glib2.so')
+  def detect_and_copy_dll_dependencies(gem_name, so_file)
+    # Determine architecture from environment
+    architecture = ENV['PLATFORM'] || (ENV['MSYSTEM'] == 'MINGW32' ? 'x86' : 'x64')
+
+    # Call the deterministic DLL extraction script
+    script_path = File.expand_path('../scripts/extract-dll-dependencies.rb', __FILE__)
+
+    unless File.exist?(script_path)
+      puts "  ⚠️  WARNING: DLL extraction script not found at #{script_path}"
+      puts "     Skipping deterministic DLL extraction"
+      return
+    end
+
+    # Run the extraction script from the gem directory
+    cmd = "ruby #{script_path} #{gem_name} #{architecture}"
+    result = system(cmd)
+
+    unless result
+      puts "  ⚠️  WARNING: DLL extraction script failed"
+      puts "     This may result in missing DLL dependencies"
     end
   end
 end
