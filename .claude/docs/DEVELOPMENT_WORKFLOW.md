@@ -224,6 +224,72 @@ chore(all): update .gitignore for gem artifacts
 
 ---
 
+## PR and Commit Batching Strategy
+
+**Philosophy:** Quality over frequency. Batch meaningful work. Keep PRs focused and reviewable.
+
+### Commit Batching
+
+**When to commit:**
+✅ **Completed a logical unit of work** (feature, fix, refactor)
+✅ **All tests passing** for the changes
+✅ **Documentation updated** for the changes
+✅ **Ready for independent review** (commit stands on its own)
+
+❌ **Avoid:**
+- After every single file edit
+- "Checkpoint commits" without tests (use `git stash` instead)
+- Work-in-progress without quality gates passing
+- "Fix typo" commits (amend previous commit instead)
+
+**Goal:** 3-5 well-crafted commits per PR, not 20+ micro-commits
+
+### When to Push/Create PR
+
+**Push to branch:**
+- Work unit is complete
+- All acceptance criteria met
+- Quality gates passed (tests, RuboCop, documentation)
+- OR: Approaching token limit (preserve work, see below)
+
+**Create PR:**
+- Work unit complete and pushed
+- Ready for review
+- PR title follows convention: `feat(all):` or `fix(all):`
+- PR description includes context and testing notes
+
+**Draft PRs:**
+- Acceptable for work-in-progress if sharing for feedback
+- Mark as draft until all quality gates pass
+- Convert to ready-for-review when complete
+
+### Token-Aware Commit Strategy
+
+**If approaching token limit mid-work-unit:**
+
+1. **Complete current logical change** (don't leave broken state)
+2. **Run quality gates** (tests, RuboCop, build if applicable)
+3. **Commit with proper message** (Conventional Commits)
+4. **Push to preserve work** (branch is your backup)
+5. **Create session handoff summary** (use template in `.claude/SESSION_HANDOFF_TEMPLATE.md`)
+6. **PR can wait** - Create in next session when work unit complete
+7. **OR: Create draft PR** - Mark as draft, complete in next session
+
+**Example scenario:**
+```
+Token usage: ~85%
+Work unit: 60% complete
+Current change: Feature X implemented, tests passing
+
+Actions:
+1. Commit Feature X: "feat(glib2): add DLL extraction for glib2"
+2. Push to branch
+3. Create session handoff with remaining work
+4. New session: Resume, complete work unit, finalize PR
+```
+
+---
+
 ## Mode-Specific Workflows
 
 ### Planning Mode (`/arch`)

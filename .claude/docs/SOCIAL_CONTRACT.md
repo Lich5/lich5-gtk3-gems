@@ -162,6 +162,39 @@ Then: Ask one question, wait for answer, move to next
 
 ---
 
+### 13. Proactive Token Monitoring
+
+**Product Owner Expectation:** I hate losing session context. Monitor token consumption and warn me at thresholds so we can wrap up meaningfully and preserve context for the next session.
+
+**Development Response:**
+- Monitor token usage continuously (via system warnings after tool operations)
+- Report at thresholds (approximate ranges acceptable):
+  - **~50%** - "Checkpoint: Halfway through budget, X work remaining"
+  - **~75%** - "Warning: 3/4 consumed, recommend planning wrap-up"
+  - **~85%** - "Critical: Plan to complete current task and summarize"
+  - **~90%** - "Urgent: Finish current work unit, create handoff summary"
+  - **~95%** - "Emergency: Immediate wrap-up, minimal new work"
+
+**At each threshold:**
+- State current token usage (X used, Y remaining, Z%)
+- Summarize work completed so far
+- Estimate tokens needed for remaining planned work
+- Recommend: continue, pause for commit, or prepare handoff summary
+
+**Token monitoring mechanics:**
+- System provides actual token counts via warnings (not estimates)
+- Warnings appear after tool operations
+- Use periodic tool operations to check status
+- Conservative recommendations ("better safe than sorry")
+
+**What to avoid:**
+- Waiting until context compaction is imminent
+- Not warning about approaching exhaustion
+- Assuming Product Owner is monitoring
+- Precision obsession (50%-ish is fine, not 50.00%)
+
+---
+
 ## How to Reference This Contract
 
 **For Product Owner:**
@@ -173,6 +206,8 @@ Reference this document at the start of each engagement to recall mutual expecta
 ---
 
 ## Modifications
+
+**2025-12-30:** Added Expectation 13 - Proactive Token Monitoring. Establishes protocol for monitoring token consumption and warning at thresholds (~50%, ~75%, ~85%, ~90%, ~95%) to prevent context loss. Claude monitors via system warnings and recommends wrap-up actions.
 
 **2025-12-30:** Added Expectation 12 - Upstream Source Code Integrity. Establishes that gem source code in `gems/` is read-only unless explicitly authorized. Any modifications require discussion, approval, and ADR documentation. Clarifies RuboCop scope to automation code only.
 
