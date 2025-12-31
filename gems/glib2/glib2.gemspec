@@ -36,7 +36,15 @@ Gem::Specification.new do |s|
   # Binary gems are precompiled for specific platform, skip compilation at install time
   s.platform      = Gem::Platform.new('x64-mingw32')
 
-  s.extensions    = ["ext/#{s.name}/extconf.rb"]
+  # BINARY GEM MODIFICATION: Remove extensions field for binary gem
+  # See docs/adr/0001-binary-gem-upstream-modifications.md
+  # Binary gems contain precompiled .so files - no compilation at install time.
+  # If s.extensions is set, RubyGems will try to run extconf.rb and compile,
+  # which requires MSYS2/devkit. We skip this entirely for binary gems.
+  #
+  # Original source gem (REMOVED for binary gem):
+  # s.extensions    = ["ext/#{s.name}/extconf.rb"]
+
   s.require_paths = ["lib"]
   s.files = [
     "COPYING.LIB",
