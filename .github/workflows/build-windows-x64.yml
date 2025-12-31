@@ -46,7 +46,7 @@ jobs:
 
     strategy:
       matrix:
-        ruby: ['3.3', '3.4']  # Compile for each Ruby version separately
+        ruby: ['3.3', '3.4', '4.0']  # Compile for each Ruby version separately
       fail-fast: false  # Continue other builds if one fails
 
     steps:
