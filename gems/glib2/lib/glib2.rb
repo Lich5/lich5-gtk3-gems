@@ -19,39 +19,6 @@ require 'English'
 require 'thread'
 require 'glib2/deprecatable'
 
-# For binary gems: add vendor/bin to PATH before loading native extension
-# This allows bundled DLLs to be found on Windows
-if Gem.win_platform?
-  vendor_bin = File.join(__dir__, 'glib2', 'vendor', 'bin')
-  if Dir.exist?(vendor_bin)
-    separator = File::PATH_SEPARATOR
-    paths = (ENV['PATH'] || '').split(separator)
-    unless paths.include?(vendor_bin)
-      paths.unshift(vendor_bin)
-      ENV['PATH'] = paths.join(separator)
-    end
-  end
-end
-
-# Load the correct precompiled extension for this Ruby version
-# Binary gem includes .so files for Ruby 3.3, 3.4, and 4.0
-if defined?(RUBY_ENGINE) && RUBY_ENGINE == 'cruby'
-  ruby_version = "#{RUBY_VERSION.major}#{RUBY_VERSION.minor}"
-  glib2_dir = File.join(__dir__, 'glib2')
-
-  # Try to load version-specific .so
-  so_file = File.join(glib2_dir, "glib2-ruby#{ruby_version}.so")
-  if File.exist?(so_file)
-    require_relative so_file
-  else
-    # Fallback to generic glib2.so (source build)
-    require "#{glib2_dir}/glib2.so"
-  end
-else
-  # Non-CRuby or source build
-  require "glib2.so"
-end
-
 module GLib
   module_function
   def check_binding_version?(major, minor, micro)
@@ -147,7 +114,27 @@ module GLib
   end
 end
 
-require "glib2.so"
+# BINARY GEM MODIFICATION: Add vendor/bin to DLL search path before loading .so
+# See docs/adr/0001-binary-gem-upstream-modifications.md
+# For Windows binary gems, bundled DLLs are in lib/glib2/vendor/bin/. We must add this
+# to the DLL search path BEFORE loading glib2.so, otherwise Windows won't find the
+# required GTK3 DLLs (libglib-2.0-0.dll, etc.) and loading will fail with LoadError 126.
+# The prepend_dll_path method (defined above) uses RubyInstaller runtime if available
+# and also adds to PATH for compatibility.
+if Gem.win_platform?
+  vendor_bin = File.join(__dir__, 'glib2', 'vendor', 'bin')
+  GLib.prepend_dll_path(vendor_bin) if Dir.exist?(vendor_bin)
+end
+
+# BINARY GEM MODIFICATION: Load version-specific precompiled .so
+# See docs/adr/0001-binary-gem-upstream-modifications.md
+# Binary gems support multiple Ruby versions (3.3, 3.4) by including separate precompiled
+# .so files in version-specific directories: lib/glib2/3.3/glib2.so, lib/glib2/3.4/glib2.so
+# Each Ruby version requires its own compiled binary - they are NOT interchangeable due to
+# binary compatibility (different internal structures, ABI changes between versions).
+# We extract major.minor from RUBY_VERSION and load the matching .so.
+major, minor, _ = RUBY_VERSION.split(/\./)
+require "glib2/#{major}.#{minor}/glib2.so"
 
 module GLib
   SIGNAL_HANDLER_PREFIX = "signal_do_"
