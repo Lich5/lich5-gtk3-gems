@@ -31,6 +31,7 @@
 require 'English'
 require 'fileutils'
 require 'pathname'
+require 'set'
 
 # Extracts and bundles DLL dependencies for Windows binary gems
 #
