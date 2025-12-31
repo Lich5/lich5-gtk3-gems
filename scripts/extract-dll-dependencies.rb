@@ -5,7 +5,8 @@
 #
 # Intent: Deterministically identify and bundle required Windows DLLs for binary gems
 # Input: gem_name (e.g., 'glib2'), architecture ('x64'/'x86'), optional msys2_root path
-# Output: DLLs copied to lib/<gem>/vendor/bin/, including transitive dependencies
+# Output: DLLs copied to vendor/local/bin/, including transitive dependencies
+#        Dependency-aware: avoids bundling DLLs already provided by gem dependencies
 #
 # Major Functions:
 # - detect_msys2_root() - Locate MSYS2 installation via environment or common paths
@@ -42,7 +43,7 @@ require 'set'
 # @example Extract DLLs for glib2 gem
 #   extractor = DLLDependencyExtractor.new('glib2', 'x64')
 #   extractor.extract
-#   # => Copies libglib-2.0-0.dll, libintl-8.dll, etc. to lib/glib2/vendor/bin/
+#   # => Copies libglib-2.0-0.dll, libintl-8.dll, etc. to vendor/local/bin/
 #
 # @example With custom MSYS2 path
 #   extractor = DLLDependencyExtractor.new('glib2', 'x64', '/c/msys64')
@@ -296,27 +297,48 @@ class DLLDependencyExtractor
     dll_names.reject { |dll| excluded.any? { |excl| dll.downcase == excl.downcase } }
   end
 
-  # Copy DLLs and their transitive dependencies to vendor/bin/
+  # Copy DLLs and their transitive dependencies to vendor/local/bin/
   #
   # Recursively analyzes each DLL's dependencies and copies them as well,
   # up to a maximum iteration depth to prevent infinite loops.
   #
+  # IMPORTANT: For dependency-aware bundling, only bundle DLLs NOT provided by
+  # runtime dependencies (e.g., glib2 provides core DLLs to all dependent gems).
+  #
   # @param dll_names [Array<String>] Initial list of DLL names to copy
   # @return [void]
   def copy_dlls(dll_names)
-    # Create vendor directory structure
-    vendor_dir = "lib/#{@gem_name}/vendor/bin"
+    # Create vendor directory structure at gem root (official ruby-gnome strategy)
+    vendor_dir = "vendor/local/bin"
     FileUtils.mkdir_p(vendor_dir)
 
     puts "Copying DLLs to #{vendor_dir}..."
 
+    # Get DLLs already provided by runtime dependencies
+    already_provided = get_dependency_provided_dlls
+
+    if already_provided.any?
+      puts "  ℹ️  Excluding #{already_provided.count} DLLs already provided by dependencies:"
+      already_provided.sort.each { |dll| puts "    - #{dll}" }
+      puts ''
+    end
+
+    # Filter out already-provided DLLs from initial list
+    filtered_dll_names = dll_names.reject { |dll| already_provided.include?(dll) }
+
+    if filtered_dll_names.count < dll_names.count
+      excluded_count = dll_names.count - filtered_dll_names.count
+      puts "  ✓ Filtered out #{excluded_count} DLL(s) already provided by dependencies"
+      puts ''
+    end
+
     # Track all DLLs we need to copy (including transitive dependencies)
-    all_dlls_to_copy = Set.new(dll_names)
+    all_dlls_to_copy = Set.new(filtered_dll_names)
     copied = Set.new
     not_found = Set.new
 
     # Copy DLLs and resolve transitive dependencies
-    to_process = dll_names.dup
+    to_process = filtered_dll_names.dup
     max_iterations = 10 # Prevent infinite loops
     iteration = 0
 
@@ -336,8 +358,9 @@ class DLLDependencyExtractor
           puts "  ✓ #{dll_name}"
           copied.add(dll_name)
 
-          # Find dependencies of this DLL
+          # Find dependencies of this DLL (and filter out already-provided ones)
           deps = extract_dll_names_from_file(src)
+          deps = deps.reject { |dep| already_provided.include?(dep) }
           deps.each do |dep|
             unless copied.include?(dep) || all_dlls_to_copy.include?(dep)
               all_dlls_to_copy.add(dep)
@@ -363,6 +386,54 @@ class DLLDependencyExtractor
     puts ''
     puts 'This may cause runtime failures if these DLLs are required.'
     puts 'Check the compilation environment or build configuration.'
+  end
+
+  # Get DLLs already provided by runtime dependencies
+  #
+  # Parses gemspec to find runtime dependencies, then scans each dependency's
+  # vendor/local/bin directory to build a set of already-bundled DLLs.
+  #
+  # This enables dependency-aware bundling: if glib2 already bundles libglib-2.0-0.dll,
+  # gobject-introspection won't duplicate it.
+  #
+  # @return [Set<String>] Set of DLL filenames already provided by dependencies
+  def get_dependency_provided_dlls
+    gemspec_path = "gems/#{@gem_name}/#{@gem_name}.gemspec"
+
+    unless File.exist?(gemspec_path)
+      puts "  ℹ️  No gemspec found at #{gemspec_path}, assuming no dependencies"
+      return Set.new
+    end
+
+    # Read gemspec to extract runtime dependencies
+    gemspec_content = File.read(gemspec_path)
+
+    # Extract runtime dependencies like: s.add_runtime_dependency("glib2", "= #{s.version}")
+    # Match both single and double quotes
+    runtime_deps = gemspec_content.scan(/add_runtime_dependency\(["']([\w-]+)["']/).flatten
+
+    if runtime_deps.any?
+      puts "  ℹ️  Found #{runtime_deps.count} runtime #{runtime_deps.count == 1 ? 'dependency' : 'dependencies'}: #{runtime_deps.join(', ')}"
+    else
+      puts '  ℹ️  No runtime dependencies found (this gem bundles all required DLLs)'
+      return Set.new
+    end
+
+    provided_dlls = Set.new
+
+    runtime_deps.each do |dep_name|
+      vendor_path = "gems/#{dep_name}/vendor/local/bin"
+
+      if Dir.exist?(vendor_path)
+        dep_dlls = Dir.glob(File.join(vendor_path, '*.dll')).map { |path| File.basename(path) }
+        puts "    - #{dep_name}: provides #{dep_dlls.count} DLL(s)"
+        provided_dlls.merge(dep_dlls)
+      else
+        puts "    - #{dep_name}: no vendor/local/bin found (may not be built yet)"
+      end
+    end
+
+    provided_dlls
   end
 
   # Find full path to DLL in MSYS2 directory structure

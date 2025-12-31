@@ -1,0 +1,1125 @@
+# Build Windows x64 GTK3 Suite Binary Gems Workflow
+#
+# Purpose:
+#   Compiles complete GTK3 suite (9 gems) for Windows x64 across multiple Ruby versions
+#   using dependency-aware DLL bundling strategy matching official ruby-gnome architecture.
+#
+# Architecture:
+#   Sequential gem jobs, each with:
+#   - Build job: Matrix parallel builds for Ruby 3.3, 3.4, 4.0
+#   - Consolidate job: Combines into single multi-Ruby gem
+#   - Dependency chain enforced via needs: [previous-gem-consolidate]
+#
+# Gem Build Order:
+#   glib2 → gobject-introspection → gio2 → cairo → cairo-gobject → pango → gdk_pixbuf2 → atk → gdk3 → gtk3
+#
+# DLL Bundling Strategy:
+#   - glib2: comprehensive foundation (22+ DLLs) in vendor/local/bin
+#   - Other gems: dependency-aware (only gem-specific DLLs, no duplication)
+#   - scripts/extract-dll-dependencies.rb scans runtime deps to avoid duplication
+#
+# See: docs/adr/0001-binary-gem-upstream-modifications.md
+
+name: Build GTK3 Suite (x64)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  # ============================================================================
+  # GLIB2 - Foundation gem
+  # ============================================================================
+
+  build-glib2-x64:
+    name: Build glib2 (Windows x64, Ruby ${{ matrix.ruby }})
+    runs-on: windows-latest
+
+    strategy:
+      matrix:
+        ruby: ['3.3', '3.4', '4.0']
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby ${{ matrix.ruby }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '${{ matrix.ruby }}'
+          bundler-cache: true
+
+      - name: Install MSYS2 (x64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          location: ${{ runner.temp }}/msys2-${{ github.run_id }}
+          install: >-
+            mingw-w64-x86_64-gtk3
+            mingw-w64-x86_64-glib2
+            mingw-w64-x86_64-toolchain
+            pkg-config
+
+      - name: Build glib2
+        shell: msys2 {0}
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('glib2')"
+        env:
+          BINARY_GEM: 'true'
+
+      - name: Upload glib2 extensions
+        uses: actions/upload-artifact@v4
+        with:
+          name: glib2-extensions-x64-${{ matrix.ruby }}
+          path: |
+            gems/glib2/lib/
+            gems/glib2/vendor/
+          retention-days: 30
+
+  consolidate-glib2:
+    name: Consolidate glib2 (x64)
+    runs-on: windows-latest
+    needs: [build-glib2-x64]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby 3.3
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Download glib2 extensions (Ruby 3.3)
+        uses: actions/download-artifact@v4
+        with:
+          name: glib2-extensions-x64-3.3
+          path: gems/glib2/
+
+      - name: Download glib2 extensions (Ruby 3.4)
+        uses: actions/download-artifact@v4
+        with:
+          name: glib2-extensions-x64-3.4
+          path: gems/glib2/
+
+      - name: Download glib2 extensions (Ruby 4.0)
+        uses: actions/download-artifact@v4
+        with:
+          name: glib2-extensions-x64-4.0
+          path: gems/glib2/
+
+      - name: Build consolidated glib2 gem
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:consolidate_gem'].invoke('glib2')"
+
+      - name: Upload glib2 gem
+        uses: actions/upload-artifact@v4
+        with:
+          name: gem-glib2-x64-mingw32
+          path: pkg/glib2-*.gem
+          retention-days: 90
+
+  # ============================================================================
+  # GOBJECT-INTROSPECTION - Depends on glib2
+  # ============================================================================
+
+  build-gobject-introspection-x64:
+    name: Build gobject-introspection (Windows x64, Ruby ${{ matrix.ruby }})
+    runs-on: windows-latest
+    needs: [consolidate-glib2]
+
+    strategy:
+      matrix:
+        ruby: ['3.3', '3.4', '4.0']
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby ${{ matrix.ruby }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '${{ matrix.ruby }}'
+          bundler-cache: true
+
+      - name: Install MSYS2 (x64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          location: ${{ runner.temp }}/msys2-${{ github.run_id }}
+          install: >-
+            mingw-w64-x86_64-gtk3
+            mingw-w64-x86_64-glib2
+            mingw-w64-x86_64-gobject-introspection
+            mingw-w64-x86_64-toolchain
+            pkg-config
+
+      - name: Download glib2 gem
+        uses: actions/download-artifact@v4
+        with:
+          name: gem-glib2-x64-mingw32
+          path: deps/
+
+      - name: Install glib2 dependency
+        shell: msys2 {0}
+        run: |
+          gem install deps/glib2-*.gem
+
+      - name: Build gobject-introspection
+        shell: msys2 {0}
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('gobject-introspection')"
+        env:
+          BINARY_GEM: 'true'
+
+      - name: Upload gobject-introspection extensions
+        uses: actions/upload-artifact@v4
+        with:
+          name: gobject-introspection-extensions-x64-${{ matrix.ruby }}
+          path: |
+            gems/gobject-introspection/lib/
+            gems/gobject-introspection/vendor/
+          retention-days: 30
+
+  consolidate-gobject-introspection:
+    name: Consolidate gobject-introspection (x64)
+    runs-on: windows-latest
+    needs: [build-gobject-introspection-x64]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby 3.3
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Download gobject-introspection extensions (Ruby 3.3)
+        uses: actions/download-artifact@v4
+        with:
+          name: gobject-introspection-extensions-x64-3.3
+          path: gems/gobject-introspection/
+
+      - name: Download gobject-introspection extensions (Ruby 3.4)
+        uses: actions/download-artifact@v4
+        with:
+          name: gobject-introspection-extensions-x64-3.4
+          path: gems/gobject-introspection/
+
+      - name: Download gobject-introspection extensions (Ruby 4.0)
+        uses: actions/download-artifact@v4
+        with:
+          name: gobject-introspection-extensions-x64-4.0
+          path: gems/gobject-introspection/
+
+      - name: Build consolidated gobject-introspection gem
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:consolidate_gem'].invoke('gobject-introspection')"
+
+      - name: Upload gobject-introspection gem
+        uses: actions/upload-artifact@v4
+        with:
+          name: gem-gobject-introspection-x64-mingw32
+          path: pkg/gobject-introspection-*.gem
+          retention-days: 90
+
+  # ============================================================================
+  # GIO2 - Depends on gobject-introspection
+  # ============================================================================
+
+  build-gio2-x64:
+    name: Build gio2 (Windows x64, Ruby ${{ matrix.ruby }})
+    runs-on: windows-latest
+    needs: [consolidate-gobject-introspection]
+
+    strategy:
+      matrix:
+        ruby: ['3.3', '3.4', '4.0']
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby ${{ matrix.ruby }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '${{ matrix.ruby }}'
+          bundler-cache: true
+
+      - name: Install MSYS2 (x64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          location: ${{ runner.temp }}/msys2-${{ github.run_id }}
+          install: >-
+            mingw-w64-x86_64-gtk3
+            mingw-w64-x86_64-glib2
+            mingw-w64-x86_64-gobject-introspection
+            mingw-w64-x86_64-toolchain
+            pkg-config
+
+      - name: Download dependency gems
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gem-*-x64-mingw32
+          path: deps/
+          merge-multiple: true
+
+      - name: Install dependencies
+        shell: msys2 {0}
+        run: |
+          gem install deps/glib2-*.gem
+          gem install deps/gobject-introspection-*.gem
+
+      - name: Build gio2
+        shell: msys2 {0}
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('gio2')"
+        env:
+          BINARY_GEM: 'true'
+
+      - name: Upload gio2 extensions
+        uses: actions/upload-artifact@v4
+        with:
+          name: gio2-extensions-x64-${{ matrix.ruby }}
+          path: |
+            gems/gio2/lib/
+            gems/gio2/vendor/
+          retention-days: 30
+
+  consolidate-gio2:
+    name: Consolidate gio2 (x64)
+    runs-on: windows-latest
+    needs: [build-gio2-x64]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby 3.3
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Download gio2 extensions (Ruby 3.3)
+        uses: actions/download-artifact@v4
+        with:
+          name: gio2-extensions-x64-3.3
+          path: gems/gio2/
+
+      - name: Download gio2 extensions (Ruby 3.4)
+        uses: actions/download-artifact@v4
+        with:
+          name: gio2-extensions-x64-3.4
+          path: gems/gio2/
+
+      - name: Download gio2 extensions (Ruby 4.0)
+        uses: actions/download-artifact@v4
+        with:
+          name: gio2-extensions-x64-4.0
+          path: gems/gio2/
+
+      - name: Build consolidated gio2 gem
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:consolidate_gem'].invoke('gio2')"
+
+      - name: Upload gio2 gem
+        uses: actions/upload-artifact@v4
+        with:
+          name: gem-gio2-x64-mingw32
+          path: pkg/gio2-*.gem
+          retention-days: 90
+
+  # ============================================================================
+  # CAIRO - Independent gem (different versioning)
+  # ============================================================================
+
+  build-cairo-x64:
+    name: Build cairo (Windows x64, Ruby ${{ matrix.ruby }})
+    runs-on: windows-latest
+    needs: [consolidate-glib2]
+
+    strategy:
+      matrix:
+        ruby: ['3.3', '3.4', '4.0']
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby ${{ matrix.ruby }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '${{ matrix.ruby }}'
+          bundler-cache: true
+
+      - name: Install MSYS2 (x64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          location: ${{ runner.temp }}/msys2-${{ github.run_id }}
+          install: >-
+            mingw-w64-x86_64-cairo
+            mingw-w64-x86_64-toolchain
+            pkg-config
+
+      - name: Download glib2 gem
+        uses: actions/download-artifact@v4
+        with:
+          name: gem-glib2-x64-mingw32
+          path: deps/
+
+      - name: Install glib2 dependency
+        shell: msys2 {0}
+        run: |
+          gem install deps/glib2-*.gem
+
+      - name: Build cairo
+        shell: msys2 {0}
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('cairo')"
+        env:
+          BINARY_GEM: 'true'
+
+      - name: Upload cairo extensions
+        uses: actions/upload-artifact@v4
+        with:
+          name: cairo-extensions-x64-${{ matrix.ruby }}
+          path: |
+            gems/cairo/lib/
+            gems/cairo/vendor/
+          retention-days: 30
+
+  consolidate-cairo:
+    name: Consolidate cairo (x64)
+    runs-on: windows-latest
+    needs: [build-cairo-x64]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby 3.3
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Download cairo extensions (Ruby 3.3)
+        uses: actions/download-artifact@v4
+        with:
+          name: cairo-extensions-x64-3.3
+          path: gems/cairo/
+
+      - name: Download cairo extensions (Ruby 3.4)
+        uses: actions/download-artifact@v4
+        with:
+          name: cairo-extensions-x64-3.4
+          path: gems/cairo/
+
+      - name: Download cairo extensions (Ruby 4.0)
+        uses: actions/download-artifact@v4
+        with:
+          name: cairo-extensions-x64-4.0
+          path: gems/cairo/
+
+      - name: Build consolidated cairo gem
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:consolidate_gem'].invoke('cairo')"
+
+      - name: Upload cairo gem
+        uses: actions/upload-artifact@v4
+        with:
+          name: gem-cairo-x64-mingw32
+          path: pkg/cairo-*.gem
+          retention-days: 90
+
+  # ============================================================================
+  # CAIRO-GOBJECT - Depends on cairo + glib2
+  # ============================================================================
+
+  build-cairo-gobject-x64:
+    name: Build cairo-gobject (Windows x64, Ruby ${{ matrix.ruby }})
+    runs-on: windows-latest
+    needs: [consolidate-cairo]
+
+    strategy:
+      matrix:
+        ruby: ['3.3', '3.4', '4.0']
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby ${{ matrix.ruby }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '${{ matrix.ruby }}'
+          bundler-cache: true
+
+      - name: Install MSYS2 (x64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          location: ${{ runner.temp }}/msys2-${{ github.run_id }}
+          install: >-
+            mingw-w64-x86_64-gtk3
+            mingw-w64-x86_64-cairo
+            mingw-w64-x86_64-toolchain
+            pkg-config
+
+      - name: Download dependency gems
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gem-*-x64-mingw32
+          path: deps/
+          merge-multiple: true
+
+      - name: Install dependencies
+        shell: msys2 {0}
+        run: |
+          gem install deps/glib2-*.gem
+          gem install deps/cairo-*.gem
+
+      - name: Build cairo-gobject
+        shell: msys2 {0}
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('cairo-gobject')"
+        env:
+          BINARY_GEM: 'true'
+
+      - name: Upload cairo-gobject extensions
+        uses: actions/upload-artifact@v4
+        with:
+          name: cairo-gobject-extensions-x64-${{ matrix.ruby }}
+          path: |
+            gems/cairo-gobject/lib/
+            gems/cairo-gobject/vendor/
+          retention-days: 30
+
+  consolidate-cairo-gobject:
+    name: Consolidate cairo-gobject (x64)
+    runs-on: windows-latest
+    needs: [build-cairo-gobject-x64]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby 3.3
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Download cairo-gobject extensions (Ruby 3.3)
+        uses: actions/download-artifact@v4
+        with:
+          name: cairo-gobject-extensions-x64-3.3
+          path: gems/cairo-gobject/
+
+      - name: Download cairo-gobject extensions (Ruby 3.4)
+        uses: actions/download-artifact@v4
+        with:
+          name: cairo-gobject-extensions-x64-3.4
+          path: gems/cairo-gobject/
+
+      - name: Download cairo-gobject extensions (Ruby 4.0)
+        uses: actions/download-artifact@v4
+        with:
+          name: cairo-gobject-extensions-x64-4.0
+          path: gems/cairo-gobject/
+
+      - name: Build consolidated cairo-gobject gem
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:consolidate_gem'].invoke('cairo-gobject')"
+
+      - name: Upload cairo-gobject gem
+        uses: actions/upload-artifact@v4
+        with:
+          name: gem-cairo-gobject-x64-mingw32
+          path: pkg/cairo-gobject-*.gem
+          retention-days: 90
+
+  # ============================================================================
+  # PANGO - Depends on cairo + glib2
+  # ============================================================================
+
+  build-pango-x64:
+    name: Build pango (Windows x64, Ruby ${{ matrix.ruby }})
+    runs-on: windows-latest
+    needs: [consolidate-cairo-gobject]
+
+    strategy:
+      matrix:
+        ruby: ['3.3', '3.4', '4.0']
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby ${{ matrix.ruby }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '${{ matrix.ruby }}'
+          bundler-cache: true
+
+      - name: Install MSYS2 (x64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          location: ${{ runner.temp }}/msys2-${{ github.run_id }}
+          install: >-
+            mingw-w64-x86_64-pango
+            mingw-w64-x86_64-cairo
+            mingw-w64-x86_64-glib2
+            mingw-w64-x86_64-toolchain
+            pkg-config
+
+      - name: Download dependency gems
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gem-*-x64-mingw32
+          path: deps/
+          merge-multiple: true
+
+      - name: Install dependencies
+        shell: msys2 {0}
+        run: |
+          gem install deps/glib2-*.gem
+          gem install deps/cairo-*.gem
+          gem install deps/cairo-gobject-*.gem
+
+      - name: Build pango
+        shell: msys2 {0}
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('pango')"
+        env:
+          BINARY_GEM: 'true'
+
+      - name: Upload pango extensions
+        uses: actions/upload-artifact@v4
+        with:
+          name: pango-extensions-x64-${{ matrix.ruby }}
+          path: |
+            gems/pango/lib/
+            gems/pango/vendor/
+          retention-days: 30
+
+  consolidate-pango:
+    name: Consolidate pango (x64)
+    runs-on: windows-latest
+    needs: [build-pango-x64]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby 3.3
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Download pango extensions (Ruby 3.3)
+        uses: actions/download-artifact@v4
+        with:
+          name: pango-extensions-x64-3.3
+          path: gems/pango/
+
+      - name: Download pango extensions (Ruby 3.4)
+        uses: actions/download-artifact@v4
+        with:
+          name: pango-extensions-x64-3.4
+          path: gems/pango/
+
+      - name: Download pango extensions (Ruby 4.0)
+        uses: actions/download-artifact@v4
+        with:
+          name: pango-extensions-x64-4.0
+          path: gems/pango/
+
+      - name: Build consolidated pango gem
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:consolidate_gem'].invoke('pango')"
+
+      - name: Upload pango gem
+        uses: actions/upload-artifact@v4
+        with:
+          name: gem-pango-x64-mingw32
+          path: pkg/pango-*.gem
+          retention-days: 90
+
+  # ============================================================================
+  # GDK_PIXBUF2 - Depends on glib2
+  # ============================================================================
+
+  build-gdk-pixbuf2-x64:
+    name: Build gdk_pixbuf2 (Windows x64, Ruby ${{ matrix.ruby }})
+    runs-on: windows-latest
+    needs: [consolidate-gobject-introspection]
+
+    strategy:
+      matrix:
+        ruby: ['3.3', '3.4', '4.0']
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby ${{ matrix.ruby }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '${{ matrix.ruby }}'
+          bundler-cache: true
+
+      - name: Install MSYS2 (x64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          location: ${{ runner.temp }}/msys2-${{ github.run_id }}
+          install: >-
+            mingw-w64-x86_64-gdk-pixbuf2
+            mingw-w64-x86_64-glib2
+            mingw-w64-x86_64-gobject-introspection
+            mingw-w64-x86_64-toolchain
+            pkg-config
+
+      - name: Download dependency gems
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gem-*-x64-mingw32
+          path: deps/
+          merge-multiple: true
+
+      - name: Install dependencies
+        shell: msys2 {0}
+        run: |
+          gem install deps/glib2-*.gem
+          gem install deps/gobject-introspection-*.gem
+
+      - name: Build gdk_pixbuf2
+        shell: msys2 {0}
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('gdk_pixbuf2')"
+        env:
+          BINARY_GEM: 'true'
+
+      - name: Upload gdk_pixbuf2 extensions
+        uses: actions/upload-artifact@v4
+        with:
+          name: gdk_pixbuf2-extensions-x64-${{ matrix.ruby }}
+          path: |
+            gems/gdk_pixbuf2/lib/
+            gems/gdk_pixbuf2/vendor/
+          retention-days: 30
+
+  consolidate-gdk-pixbuf2:
+    name: Consolidate gdk_pixbuf2 (x64)
+    runs-on: windows-latest
+    needs: [build-gdk-pixbuf2-x64]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby 3.3
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Download gdk_pixbuf2 extensions (Ruby 3.3)
+        uses: actions/download-artifact@v4
+        with:
+          name: gdk_pixbuf2-extensions-x64-3.3
+          path: gems/gdk_pixbuf2/
+
+      - name: Download gdk_pixbuf2 extensions (Ruby 3.4)
+        uses: actions/download-artifact@v4
+        with:
+          name: gdk_pixbuf2-extensions-x64-3.4
+          path: gems/gdk_pixbuf2/
+
+      - name: Download gdk_pixbuf2 extensions (Ruby 4.0)
+        uses: actions/download-artifact@v4
+        with:
+          name: gdk_pixbuf2-extensions-x64-4.0
+          path: gems/gdk_pixbuf2/
+
+      - name: Build consolidated gdk_pixbuf2 gem
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:consolidate_gem'].invoke('gdk_pixbuf2')"
+
+      - name: Upload gdk_pixbuf2 gem
+        uses: actions/upload-artifact@v4
+        with:
+          name: gem-gdk_pixbuf2-x64-mingw32
+          path: pkg/gdk_pixbuf2-*.gem
+          retention-days: 90
+
+  # ============================================================================
+  # ATK - Depends on glib2
+  # ============================================================================
+
+  build-atk-x64:
+    name: Build atk (Windows x64, Ruby ${{ matrix.ruby }})
+    runs-on: windows-latest
+    needs: [consolidate-gobject-introspection]
+
+    strategy:
+      matrix:
+        ruby: ['3.3', '3.4', '4.0']
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby ${{ matrix.ruby }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '${{ matrix.ruby }}'
+          bundler-cache: true
+
+      - name: Install MSYS2 (x64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          location: ${{ runner.temp }}/msys2-${{ github.run_id }}
+          install: >-
+            mingw-w64-x86_64-atk
+            mingw-w64-x86_64-glib2
+            mingw-w64-x86_64-gobject-introspection
+            mingw-w64-x86_64-toolchain
+            pkg-config
+
+      - name: Download dependency gems
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gem-*-x64-mingw32
+          path: deps/
+          merge-multiple: true
+
+      - name: Install dependencies
+        shell: msys2 {0}
+        run: |
+          gem install deps/glib2-*.gem
+          gem install deps/gobject-introspection-*.gem
+
+      - name: Build atk
+        shell: msys2 {0}
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('atk')"
+        env:
+          BINARY_GEM: 'true'
+
+      - name: Upload atk extensions
+        uses: actions/upload-artifact@v4
+        with:
+          name: atk-extensions-x64-${{ matrix.ruby }}
+          path: |
+            gems/atk/lib/
+            gems/atk/vendor/
+          retention-days: 30
+
+  consolidate-atk:
+    name: Consolidate atk (x64)
+    runs-on: windows-latest
+    needs: [build-atk-x64]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby 3.3
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Download atk extensions (Ruby 3.3)
+        uses: actions/download-artifact@v4
+        with:
+          name: atk-extensions-x64-3.3
+          path: gems/atk/
+
+      - name: Download atk extensions (Ruby 3.4)
+        uses: actions/download-artifact@v4
+        with:
+          name: atk-extensions-x64-3.4
+          path: gems/atk/
+
+      - name: Download atk extensions (Ruby 4.0)
+        uses: actions/download-artifact@v4
+        with:
+          name: atk-extensions-x64-4.0
+          path: gems/atk/
+
+      - name: Build consolidated atk gem
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:consolidate_gem'].invoke('atk')"
+
+      - name: Upload atk gem
+        uses: actions/upload-artifact@v4
+        with:
+          name: gem-atk-x64-mingw32
+          path: pkg/atk-*.gem
+          retention-days: 90
+
+  # ============================================================================
+  # GDK3 - Depends on pango, gdk_pixbuf2, cairo, glib2
+  # ============================================================================
+
+  build-gdk3-x64:
+    name: Build gdk3 (Windows x64, Ruby ${{ matrix.ruby }})
+    runs-on: windows-latest
+    needs: [consolidate-pango, consolidate-gdk-pixbuf2]
+
+    strategy:
+      matrix:
+        ruby: ['3.3', '3.4', '4.0']
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby ${{ matrix.ruby }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '${{ matrix.ruby }}'
+          bundler-cache: true
+
+      - name: Install MSYS2 (x64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          location: ${{ runner.temp }}/msys2-${{ github.run_id }}
+          install: >-
+            mingw-w64-x86_64-gtk3
+            mingw-w64-x86_64-glib2
+            mingw-w64-x86_64-gobject-introspection
+            mingw-w64-x86_64-cairo
+            mingw-w64-x86_64-pango
+            mingw-w64-x86_64-gdk-pixbuf2
+            mingw-w64-x86_64-toolchain
+            pkg-config
+
+      - name: Download dependency gems
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gem-*-x64-mingw32
+          path: deps/
+          merge-multiple: true
+
+      - name: Install dependencies
+        shell: msys2 {0}
+        run: |
+          gem install deps/glib2-*.gem
+          gem install deps/gobject-introspection-*.gem
+          gem install deps/gio2-*.gem
+          gem install deps/cairo-*.gem
+          gem install deps/cairo-gobject-*.gem
+          gem install deps/pango-*.gem
+          gem install deps/gdk_pixbuf2-*.gem
+
+      - name: Build gdk3
+        shell: msys2 {0}
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('gdk3')"
+        env:
+          BINARY_GEM: 'true'
+
+      - name: Upload gdk3 extensions
+        uses: actions/upload-artifact@v4
+        with:
+          name: gdk3-extensions-x64-${{ matrix.ruby }}
+          path: |
+            gems/gdk3/lib/
+            gems/gdk3/vendor/
+          retention-days: 30
+
+  consolidate-gdk3:
+    name: Consolidate gdk3 (x64)
+    runs-on: windows-latest
+    needs: [build-gdk3-x64]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby 3.3
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Download gdk3 extensions (Ruby 3.3)
+        uses: actions/download-artifact@v4
+        with:
+          name: gdk3-extensions-x64-3.3
+          path: gems/gdk3/
+
+      - name: Download gdk3 extensions (Ruby 3.4)
+        uses: actions/download-artifact@v4
+        with:
+          name: gdk3-extensions-x64-3.4
+          path: gems/gdk3/
+
+      - name: Download gdk3 extensions (Ruby 4.0)
+        uses: actions/download-artifact@v4
+        with:
+          name: gdk3-extensions-x64-4.0
+          path: gems/gdk3/
+
+      - name: Build consolidated gdk3 gem
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:consolidate_gem'].invoke('gdk3')"
+
+      - name: Upload gdk3 gem
+        uses: actions/upload-artifact@v4
+        with:
+          name: gem-gdk3-x64-mingw32
+          path: pkg/gdk3-*.gem
+          retention-days: 90
+
+  # ============================================================================
+  # GTK3 - Depends on gdk3, atk, and all previous gems
+  # ============================================================================
+
+  build-gtk3-x64:
+    name: Build gtk3 (Windows x64, Ruby ${{ matrix.ruby }})
+    runs-on: windows-latest
+    needs: [consolidate-gdk3, consolidate-atk]
+
+    strategy:
+      matrix:
+        ruby: ['3.3', '3.4', '4.0']
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby ${{ matrix.ruby }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '${{ matrix.ruby }}'
+          bundler-cache: true
+
+      - name: Install MSYS2 (x64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          location: ${{ runner.temp }}/msys2-${{ github.run_id }}
+          install: >-
+            mingw-w64-x86_64-gtk3
+            mingw-w64-x86_64-glib2
+            mingw-w64-x86_64-gobject-introspection
+            mingw-w64-x86_64-cairo
+            mingw-w64-x86_64-pango
+            mingw-w64-x86_64-gdk-pixbuf2
+            mingw-w64-x86_64-atk
+            mingw-w64-x86_64-toolchain
+            pkg-config
+
+      - name: Download dependency gems
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gem-*-x64-mingw32
+          path: deps/
+          merge-multiple: true
+
+      - name: Install dependencies
+        shell: msys2 {0}
+        run: |
+          gem install deps/glib2-*.gem
+          gem install deps/gobject-introspection-*.gem
+          gem install deps/gio2-*.gem
+          gem install deps/cairo-*.gem
+          gem install deps/cairo-gobject-*.gem
+          gem install deps/pango-*.gem
+          gem install deps/gdk_pixbuf2-*.gem
+          gem install deps/atk-*.gem
+          gem install deps/gdk3-*.gem
+
+      - name: Build gtk3
+        shell: msys2 {0}
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('gtk3')"
+        env:
+          BINARY_GEM: 'true'
+
+      - name: Upload gtk3 extensions
+        uses: actions/upload-artifact@v4
+        with:
+          name: gtk3-extensions-x64-${{ matrix.ruby }}
+          path: |
+            gems/gtk3/lib/
+            gems/gtk3/vendor/
+          retention-days: 30
+
+  consolidate-gtk3:
+    name: Consolidate gtk3 (x64)
+    runs-on: windows-latest
+    needs: [build-gtk3-x64]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby 3.3
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Download gtk3 extensions (Ruby 3.3)
+        uses: actions/download-artifact@v4
+        with:
+          name: gtk3-extensions-x64-3.3
+          path: gems/gtk3/
+
+      - name: Download gtk3 extensions (Ruby 3.4)
+        uses: actions/download-artifact@v4
+        with:
+          name: gtk3-extensions-x64-3.4
+          path: gems/gtk3/
+
+      - name: Download gtk3 extensions (Ruby 4.0)
+        uses: actions/download-artifact@v4
+        with:
+          name: gtk3-extensions-x64-4.0
+          path: gems/gtk3/
+
+      - name: Build consolidated gtk3 gem
+        run: |
+          bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:consolidate_gem'].invoke('gtk3')"
+
+      - name: Upload gtk3 gem
+        uses: actions/upload-artifact@v4
+        with:
+          name: gem-gtk3-x64-mingw32
+          path: pkg/gtk3-*.gem
+          retention-days: 90

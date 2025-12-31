@@ -62,9 +62,10 @@ Gem::Specification.new do |s|
 
   # BINARY GEM MODIFICATION: Include precompiled .so files and bundled vendor DLLs
   # See docs/adr/0001-binary-gem-upstream-modifications.md
-  # Binary gems package precompiled extensions (lib/**/*.so) and vendor libraries
+  # Binary gems package precompiled extensions (lib/**/*.so) and vendor libraries (vendor/**/*)
+  # Vendor libraries are at gem root level (vendor/local/bin/) matching official ruby-gnome strategy
   s.files += Dir.glob("lib/**/*.so")
-  s.files += Dir.glob("lib/**/vendor/**/*")
+  s.files += Dir.glob("vendor/**/*")
 
   # BINARY GEM MODIFICATION: Remove build-time dependencies
   # See docs/adr/0001-binary-gem-upstream-modifications.md
@@ -80,7 +81,7 @@ Gem::Specification.new do |s|
   # BINARY GEM MODIFICATION: Remove platform-specific system requirements
   # See docs/adr/0001-binary-gem-upstream-modifications.md
   # Binary gems don't need system package installation (Alpine, Debian, Homebrew, etc.)
-  # because all libraries are bundled in lib/glib2/vendor/. These requirements are only
+  # because all libraries are bundled in vendor/local/. These requirements are only
   # needed for source gems that compile against system-installed GLib.
   #
   # Original source gem platform requirements (REMOVED for binary gem):
