@@ -46,7 +46,7 @@ jobs:
 
     strategy:
       matrix:
-        ruby: ['3.3', '3.4']  # Compile for each Ruby version separately
+        ruby: ['3.3', '3.4', '4.0']  # Compile for each Ruby version separately
       fail-fast: false  # Continue other builds if one fails
 
     steps:
@@ -190,10 +190,10 @@ jobs:
         uses: actions/checkout@v4
 
       # Use fixed Ruby version for consolidation (doesn't affect final gem compatibility)
-      - name: Set up Ruby 3.3.0
+      - name: Set up Ruby 3.4.8
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.3.0'
+          ruby-version: '3.4.8'
           bundler-cache: true
 
       # Download artifacts from all Ruby version builds
@@ -210,8 +210,15 @@ jobs:
           name: glib2-extensions-x64-3.4
           path: gems/glib2/lib/
 
+      - name: Download x64 extensions (Ruby 4.0)
+        uses: actions/download-artifact@v4
+        with:
+          name: glib2-extensions-x64-4.0
+          path: gems/glib2/lib/
+
       # Diagnostic: Verify all version-specific artifacts were extracted correctly
-      # Expected: lib/glib2/3.3/glib2.so, lib/glib2/3.4/glib2.so, lib/glib2/vendor/
+      # Expected: lib/glib2/3.3/glib2.so, lib/glib2/3.4/glib2.so, lib/glib2/4.0/glib2.so
+      # and lib/glib2/vendor/
       - name: Verify artifact extraction
         run: |
           echo "=== Checking gem directory structure ==="
