@@ -53,6 +53,35 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Verify repository source matches rubygems.org latest version
+      # Prevents building from outdated source that may have bugs/security issues
+      - name: Verify upstream version compatibility
+        shell: bash
+        run: |
+          REPO_VERSION=$(cat gems/glib2/.upstream-version)
+          LATEST_VERSION=$(curl -s https://rubygems.org/api/v1/gems/glib2.json | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
+
+          echo "Repository based on glib2 version: $REPO_VERSION"
+          echo "Latest on rubygems.org: $LATEST_VERSION"
+
+          if [ "$REPO_VERSION" != "$LATEST_VERSION" ]; then
+            echo ""
+            echo "⚠️  WARNING: Version mismatch detected!"
+            echo "   Repository source is based on glib2 $REPO_VERSION"
+            echo "   Latest released version is $LATEST_VERSION"
+            echo ""
+            echo "Action required:"
+            echo "  1. Download: gem fetch glib2 --version $LATEST_VERSION && gem unpack glib2-$LATEST_VERSION.gem"
+            echo "  2. Review changes: diff -r gems/glib2 glib2-$LATEST_VERSION"
+            echo "  3. Re-apply binary gem modifications to new version"
+            echo "  4. Update gems/glib2/.upstream-version to $LATEST_VERSION"
+            echo "  5. Commit with message: 'chore(glib2): update to upstream $LATEST_VERSION'"
+            echo ""
+            exit 1
+          fi
+
+          echo "✅ Version check passed: building from glib2 $REPO_VERSION"
+
       - name: Set up Ruby ${{ matrix.ruby }} (x64)
         uses: ruby/setup-ruby@v1
         with:
