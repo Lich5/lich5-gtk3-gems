@@ -264,13 +264,20 @@ namespace :build do
 
       # Step 1: Compile native extension
       puts "  1. Compiling native extension for Ruby #{current_ruby_dot}..."
-      system('ruby extconf.rb') unless File.exist?('Makefile')
-      unless File.exist?('Makefile')
-        puts '❌ Failed to generate Makefile'
+
+      # Change to ext/#{gem_name}/ directory to run extconf.rb and make
+      ext_dir = File.join('ext', gem_name)
+      unless Dir.exist?(ext_dir)
+        puts "❌ Extension directory not found: #{ext_dir}"
         exit 1
       end
-      system('make') || (puts '❌ Failed to compile'
-                         exit 1)
+
+      Dir.chdir(ext_dir) do
+        system('ruby extconf.rb') || (puts '❌ Failed to generate Makefile'
+                                       exit 1)
+        system('make') || (puts '❌ Failed to compile'
+                           exit 1)
+      end
 
       # Find the compiled .so file
       so_files = Dir.glob("ext/#{gem_name}/#{gem_name}.so")

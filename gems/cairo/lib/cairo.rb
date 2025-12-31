@@ -21,6 +21,24 @@ end
 
 require "cairo/color"
 require "cairo/paper"
+
+# BINARY GEM MODIFICATION: Add vendor/local/bin to DLL search path before loading .so
+# For Windows binary gems, bundled DLLs are in vendor/local/bin/ at gem root level.
+if RUBY_PLATFORM =~ /mingw|mswin/
+  require "pathname"
+  base_dir = Pathname.new(__FILE__).dirname.dirname.expand_path
+  vendor_dir = base_dir + "vendor" + "local" + "bin"
+  if vendor_dir.exist?
+    begin
+      require "ruby_installer/runtime"
+      RubyInstaller::Runtime.add_dll_directory(vendor_dir)
+    rescue LoadError
+      # Fallback for non-RubyInstaller environments
+      ENV["PATH"] = "#{vendor_dir};#{ENV['PATH']}"
+    end
+  end
+end
+
 require "cairo.so"
 require "cairo/constants"
 
