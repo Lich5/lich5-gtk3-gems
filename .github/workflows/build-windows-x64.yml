@@ -34,9 +34,9 @@ name: Build Windows GTK3 Binary Gems (x64)
 
 on:
   workflow_dispatch:  # Manual trigger for on-demand builds
-  push:
-    branches: [main, develop]
-  pull_request:
+  # push:
+  #  branches: [main, develop]
+  # pull_request:
 
 jobs:
   # Job 1: Compile native extensions for each Ruby version
