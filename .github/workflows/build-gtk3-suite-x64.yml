@@ -75,6 +75,7 @@ jobs:
           path: |
             gems/glib2/lib/
             gems/glib2/vendor/
+            gems/glib2/ext/
           retention-days: 30
 
   consolidate-glib2:
@@ -164,6 +165,12 @@ jobs:
           name: gem-glib2-x64-mingw32
           path: deps/
 
+      - name: Download glib2 ext headers (Ruby ${{ matrix.ruby }})
+        uses: actions/download-artifact@v4
+        with:
+          name: glib2-extensions-x64-${{ matrix.ruby }}
+          path: gems/glib2/
+
       - name: Install glib2 dependency
         shell: msys2 {0}
         run: |
@@ -183,6 +190,7 @@ jobs:
           path: |
             gems/gobject-introspection/lib/
             gems/gobject-introspection/vendor/
+            gems/gobject-introspection/ext/
           retention-days: 30
 
   consolidate-gobject-introspection:
@@ -273,6 +281,18 @@ jobs:
           path: deps/
           merge-multiple: true
 
+      - name: Download dependency ext headers (glib2)
+        uses: actions/download-artifact@v4
+        with:
+          name: glib2-extensions-x64-${{ matrix.ruby }}
+          path: gems/glib2/
+
+      - name: Download dependency ext headers (gobject-introspection)
+        uses: actions/download-artifact@v4
+        with:
+          name: gobject-introspection-extensions-x64-${{ matrix.ruby }}
+          path: gems/gobject-introspection/
+
       - name: Install dependencies
         shell: msys2 {0}
         run: |
@@ -293,6 +313,7 @@ jobs:
           path: |
             gems/gio2/lib/
             gems/gio2/vendor/
+            gems/gio2/ext/
           retention-days: 30
 
   consolidate-gio2:
@@ -399,6 +420,7 @@ jobs:
           path: |
             gems/cairo/lib/
             gems/cairo/vendor/
+            gems/cairo/ext/
           retention-days: 30
 
   consolidate-cairo:
@@ -488,6 +510,18 @@ jobs:
           path: deps/
           merge-multiple: true
 
+      - name: Download dependency ext headers (glib2)
+        uses: actions/download-artifact@v4
+        with:
+          name: glib2-extensions-x64-${{ matrix.ruby }}
+          path: gems/glib2/
+
+      - name: Download dependency ext headers (cairo)
+        uses: actions/download-artifact@v4
+        with:
+          name: cairo-extensions-x64-${{ matrix.ruby }}
+          path: gems/cairo/
+
       - name: Install dependencies
         shell: msys2 {0}
         run: |
@@ -508,6 +542,7 @@ jobs:
           path: |
             gems/cairo-gobject/lib/
             gems/cairo-gobject/vendor/
+            gems/cairo-gobject/ext/
           retention-days: 30
 
   consolidate-cairo-gobject:
@@ -598,6 +633,13 @@ jobs:
           path: deps/
           merge-multiple: true
 
+      - name: Download dependency ext headers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-extensions-x64-${{ matrix.ruby }}'
+          path: gems/
+          merge-multiple: true
+
       - name: Install dependencies
         shell: msys2 {0}
         run: |
@@ -619,6 +661,7 @@ jobs:
           path: |
             gems/pango/lib/
             gems/pango/vendor/
+            gems/pango/ext/
           retention-days: 30
 
   consolidate-pango:
@@ -709,6 +752,13 @@ jobs:
           path: deps/
           merge-multiple: true
 
+      - name: Download dependency ext headers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-extensions-x64-${{ matrix.ruby }}'
+          path: gems/
+          merge-multiple: true
+
       - name: Install dependencies
         shell: msys2 {0}
         run: |
@@ -729,6 +779,7 @@ jobs:
           path: |
             gems/gdk_pixbuf2/lib/
             gems/gdk_pixbuf2/vendor/
+            gems/gdk_pixbuf2/ext/
           retention-days: 30
 
   consolidate-gdk-pixbuf2:
@@ -819,6 +870,13 @@ jobs:
           path: deps/
           merge-multiple: true
 
+      - name: Download dependency ext headers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-extensions-x64-${{ matrix.ruby }}'
+          path: gems/
+          merge-multiple: true
+
       - name: Install dependencies
         shell: msys2 {0}
         run: |
@@ -839,6 +897,7 @@ jobs:
           path: |
             gems/atk/lib/
             gems/atk/vendor/
+            gems/atk/ext/
           retention-days: 30
 
   consolidate-atk:
@@ -932,6 +991,13 @@ jobs:
           path: deps/
           merge-multiple: true
 
+      - name: Download dependency ext headers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-extensions-x64-${{ matrix.ruby }}'
+          path: gems/
+          merge-multiple: true
+
       - name: Install dependencies
         shell: msys2 {0}
         run: |
@@ -957,6 +1023,7 @@ jobs:
           path: |
             gems/gdk3/lib/
             gems/gdk3/vendor/
+            gems/gdk3/ext/
           retention-days: 30
 
   consolidate-gdk3:
@@ -1051,6 +1118,13 @@ jobs:
           path: deps/
           merge-multiple: true
 
+      - name: Download dependency ext headers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-extensions-x64-${{ matrix.ruby }}'
+          path: gems/
+          merge-multiple: true
+
       - name: Install dependencies
         shell: msys2 {0}
         run: |
@@ -1078,6 +1152,7 @@ jobs:
           path: |
             gems/gtk3/lib/
             gems/gtk3/vendor/
+            gems/gtk3/ext/
           retention-days: 30
 
   consolidate-gtk3:
