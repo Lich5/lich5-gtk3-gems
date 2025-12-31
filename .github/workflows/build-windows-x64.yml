@@ -1,32 +1,40 @@
 # Build Windows x64 Binary Gems Workflow
 #
 # Purpose:
-#   Compiles native glib2 gem extensions for Windows x64 platform across multiple Ruby versions,
-#   bundles required DLL dependencies, and produces consolidated multi-Ruby binary gems.
+#   Compiles native GTK3 suite gem extensions for Windows x64 platform across multiple Ruby versions,
+#   bundles required DLL dependencies using dependency-aware strategy, and produces consolidated
+#   multi-Ruby binary gems for the complete GTK3 ecosystem.
 #
 # Architecture:
 #   1. Build Job (build-windows-x64):
 #      - Runs in parallel for each Ruby version (3.3, 3.4)
-#      - Compiles native extension (.so) using MSYS2/MinGW64 toolchain
-#      - Extracts and bundles DLL dependencies deterministically
-#      - Creates version-specific directory structure (lib/glib2/3.3/, lib/glib2/3.4/)
+#      - Compiles gems SEQUENTIALLY in dependency order:
+#        glib2 → gobject-introspection → gio2 → cairo-gobject → pango → gdk_pixbuf2 → atk → gdk3 → gtk3
+#      - Installs each gem before building the next (dependency chain)
+#      - Extracts and bundles DLL dependencies using dependency-aware bundling
+#      - Creates version-specific directory structure (lib/<gem>/3.3/, lib/<gem>/3.4/)
 #      - Uploads compiled artifacts for consolidation
 #
 #   2. Consolidation Job (build-consolidated-gems):
-#      - Downloads all version-specific artifacts
-#      - Combines into single gem supporting multiple Ruby versions
-#      - Packages final x64-mingw32 binary gem
-#      - Uploads production-ready gem artifact
+#      - Downloads all version-specific artifacts for ALL 8 gems
+#      - Combines each gem into single package supporting multiple Ruby versions
+#      - Packages final x64-mingw32 binary gems
+#      - Uploads production-ready gem artifacts
 #
 # Workflow Structure:
 #   - Triggered by: manual dispatch, push to main/develop, pull requests
-#   - Matrix strategy: parallel builds for Ruby 3.3, 3.4
+#   - Matrix strategy: parallel builds for Ruby 3.3, 3.4 (but gems built sequentially within each)
 #   - Artifact retention: extensions (30 days), final gems (90 days)
 #
 # Dependencies:
 #   - MSYS2: mingw-w64-x86_64-gtk3, mingw-w64-x86_64-glib2, mingw-w64-x86_64-toolchain
 #   - Rakefile tasks: build:gem, build:consolidate_gem
-#   - Test suite: test/glib2_spec.rb
+#   - Test suite: test/<gem>_spec.rb
+#
+# DLL Bundling Strategy:
+#   - glib2: bundles comprehensive foundation (22+ DLLs) in vendor/local/bin
+#   - Other gems: dependency-aware bundling (only gem-specific DLLs, no duplication)
+#   - scripts/extract-dll-dependencies.rb handles dependency resolution
 #
 # See: docs/adr/0001-binary-gem-upstream-modifications.md
 
