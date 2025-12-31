@@ -65,7 +65,7 @@ Gem::Specification.new do |s|
   # BINARY GEM MODIFICATION: Include precompiled .so files and bundled vendor DLLs
   # See docs/adr/0001-binary-gem-upstream-modifications.md
   s.files += Dir.glob("lib/**/*.so")
-  s.files += Dir.glob("lib/**/vendor/**/*")
+  s.files += Dir.glob("vendor/**/*")
 
   s.add_runtime_dependency("atk", "= #{s.version}")
   s.add_runtime_dependency("gdk3", "= #{s.version}")

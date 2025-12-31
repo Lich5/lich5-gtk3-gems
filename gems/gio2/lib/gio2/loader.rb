@@ -54,12 +54,13 @@ module Gio
     end
 
     def require_extension
-      # BINARY GEM MODIFICATION: Add vendor/bin to DLL search path before loading .so
+      # BINARY GEM MODIFICATION: Add vendor/local/bin to DLL search path before loading .so
       # See docs/adr/0001-binary-gem-upstream-modifications.md
-      # For Windows binary gems, bundled DLLs are in lib/gio2/vendor/bin/. We must add this
-      # to the DLL search path BEFORE loading gio2.so, otherwise Windows won't find the
-      # required GTK3 DLLs and loading will fail with LoadError 126.
-      if Gem.win_platform?
+      # For Windows binary gems, bundled DLLs are in vendor/local/bin/ at gem root level.
+      # This matches the official ruby-gnome binary gem strategy.
+      base_dir = Pathname.new(__FILE__).dirname.dirname.dirname.expand_path
+      vendor_dir = base_dir + "vendor" + "local"
+      GLib.prepend_dll_path(vendor_dir + "bin")
         vendor_bin = File.expand_path(File.join(__dir__, '..', 'gio2', 'vendor', 'bin'))
         GLib.prepend_dll_path(vendor_bin) if Dir.exist?(vendor_bin)
       end

@@ -64,7 +64,7 @@ Gem::Specification.new do |s|
   # See docs/adr/0001-binary-gem-upstream-modifications.md
   # Binary gems package precompiled extensions (lib/**/*.so) and vendor libraries
   s.files += Dir.glob("lib/**/*.so")
-  s.files += Dir.glob("lib/**/vendor/**/*")
+  s.files += Dir.glob("vendor/**/*")
 
   s.add_runtime_dependency("glib2", "= #{s.version}")
 
