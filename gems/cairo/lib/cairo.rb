@@ -39,7 +39,11 @@ if RUBY_PLATFORM =~ /mingw|mswin/
   end
 end
 
-require "cairo.so"
+# BINARY GEM MODIFICATION: Load version-specific precompiled .so
+# Binary gems support multiple Ruby versions (3.3, 3.4, 4.0) by including separate precompiled
+# .so files in version-specific directories: lib/cairo/3.3/cairo.so, lib/cairo/3.4/cairo.so, lib/cairo/4.0/cairo.so
+major, minor, _ = RUBY_VERSION.split(/\./)
+require "cairo/#{major}.#{minor}/cairo.so"
 require "cairo/constants"
 
 module Cairo
