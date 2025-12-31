@@ -21,7 +21,29 @@ end
 
 require "cairo/color"
 require "cairo/paper"
-require "cairo.so"
+
+# BINARY GEM MODIFICATION: Add vendor/local/bin to DLL search path before loading .so
+# For Windows binary gems, bundled DLLs are in vendor/local/bin/ at gem root level.
+if RUBY_PLATFORM =~ /mingw|mswin/
+  require "pathname"
+  base_dir = Pathname.new(__FILE__).dirname.dirname.expand_path
+  vendor_dir = base_dir + "vendor" + "local" + "bin"
+  if vendor_dir.exist?
+    begin
+      require "ruby_installer/runtime"
+      RubyInstaller::Runtime.add_dll_directory(vendor_dir)
+    rescue LoadError
+      # Fallback for non-RubyInstaller environments
+      ENV["PATH"] = "#{vendor_dir};#{ENV['PATH']}"
+    end
+  end
+end
+
+# BINARY GEM MODIFICATION: Load version-specific precompiled .so
+# Binary gems support multiple Ruby versions (3.3, 3.4, 4.0) by including separate precompiled
+# .so files in version-specific directories: lib/cairo/3.3/cairo.so, lib/cairo/3.4/cairo.so, lib/cairo/4.0/cairo.so
+major, minor, _ = RUBY_VERSION.split(/\./)
+require "cairo/#{major}.#{minor}/cairo.so"
 require "cairo/constants"
 
 module Cairo
