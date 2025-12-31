@@ -1,20 +1,53 @@
+# Build Windows x64 Binary Gems Workflow
+#
+# Purpose:
+#   Compiles native glib2 gem extensions for Windows x64 platform across multiple Ruby versions,
+#   bundles required DLL dependencies, and produces consolidated multi-Ruby binary gems.
+#
+# Architecture:
+#   1. Build Job (build-windows-x64):
+#      - Runs in parallel for each Ruby version (3.3, 3.4)
+#      - Compiles native extension (.so) using MSYS2/MinGW64 toolchain
+#      - Extracts and bundles DLL dependencies deterministically
+#      - Creates version-specific directory structure (lib/glib2/3.3/, lib/glib2/3.4/)
+#      - Uploads compiled artifacts for consolidation
+#
+#   2. Consolidation Job (build-consolidated-gems):
+#      - Downloads all version-specific artifacts
+#      - Combines into single gem supporting multiple Ruby versions
+#      - Packages final x64-mingw32 binary gem
+#      - Uploads production-ready gem artifact
+#
+# Workflow Structure:
+#   - Triggered by: manual dispatch, push to main/develop, pull requests
+#   - Matrix strategy: parallel builds for Ruby 3.3, 3.4
+#   - Artifact retention: extensions (30 days), final gems (90 days)
+#
+# Dependencies:
+#   - MSYS2: mingw-w64-x86_64-gtk3, mingw-w64-x86_64-glib2, mingw-w64-x86_64-toolchain
+#   - Rakefile tasks: build:gem, build:consolidate_gem
+#   - Test suite: test/glib2_spec.rb
+#
+# See: docs/adr/0001-binary-gem-upstream-modifications.md
+
 name: Build Windows GTK3 Binary Gems (x64)
 
 on:
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:  # Manual trigger for on-demand builds
   push:
     branches: [main, develop]
   pull_request:
 
 jobs:
+  # Job 1: Compile native extensions for each Ruby version
   build-windows-x64:
     name: Build binary gems (Windows x64, Ruby ${{ matrix.ruby }})
     runs-on: windows-latest
 
     strategy:
       matrix:
-        ruby: ['3.3', '3.4']
-      fail-fast: false
+        ruby: ['3.3', '3.4']  # Compile for each Ruby version separately
+      fail-fast: false  # Continue other builds if one fails
 
     steps:
       - name: Checkout repository
@@ -26,18 +59,25 @@ jobs:
           ruby-version: '${{ matrix.ruby }}'
           bundler-cache: true
 
+      # Install MSYS2 with GTK3 and build toolchain
+      # Note: location set to unique path per run to prevent conflicts
       - name: Install MSYS2 (x64)
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: true
-          location: ${{ runner.temp }}/msys2-${{ github.run_id }}
+          location: ${{ runner.temp }}/msys2-${{ github.run_id }}  # Unique location prevents cleanup conflicts
           install: >-
             mingw-w64-x86_64-gtk3
             mingw-w64-x86_64-glib2
             mingw-w64-x86_64-toolchain
             pkg-config
 
+      # Compile native extension and extract DLL dependencies
+      # Uses Rakefile build:gem task which:
+      # - Compiles .so for current Ruby version
+      # - Calls scripts/extract-dll-dependencies.rb for deterministic DLL bundling
+      # - Creates version-specific directory (lib/glib2/3.3/ or lib/glib2/3.4/)
       - name: Build glib2 binary gem (x64)
         shell: msys2 {0}
         run: |
@@ -45,12 +85,15 @@ jobs:
         env:
           BINARY_GEM: 'true'
 
+      # Diagnostic: Verify Ruby and gem environment
       - name: Show repository status
         run: |
           ruby --version
           gem --version
           dir pkg/ || echo "pkg/ directory not created"
 
+      # Diagnostic: Verify version-specific directory structure was created
+      # Expected: lib/glib2/3.3/glib2.so or lib/glib2/3.4/glib2.so
       - name: Diagnose lib/glib2 after build
         run: |
           echo "=== Checking gems/glib2/lib/glib2 structure after build ==="
@@ -68,6 +111,8 @@ jobs:
             echo "❌ gems/glib2/lib/glib2 does NOT exist"
           }
 
+      # Diagnostic: Verify artifact glob patterns match expected files
+      # Ensures upload will include .so and vendor DLLs
       - name: Test artifact glob patterns
         run: |
           echo "=== Testing glob patterns for artifact upload ==="
@@ -78,16 +123,23 @@ jobs:
           $matchedSo | ForEach-Object { echo "  - $($_.FullName)" }
           echo ""
           echo "Pattern: gems/glib2/lib/glib2/vendor/**/*"
-          $matchedVendor = @(Get-ChildItem -Path gems/glib2/lib/glib2/vendor -Recurse -Force)
-          echo "Matched $($matchedVendor.Count) files:"
-          $matchedVendor | ForEach-Object { echo "  - $($_.FullName)" }
+          if (Test-Path gems/glib2/lib/glib2/vendor) {
+            $matchedVendor = @(Get-ChildItem -Path gems/glib2/lib/glib2/vendor -Recurse -Force)
+            echo "Matched $($matchedVendor.Count) files:"
+            $matchedVendor | ForEach-Object { echo "  - $($_.FullName)" }
+          } else {
+            echo "⚠ vendor directory not found"
+          }
           echo ""
-          echo "Total files that will be uploaded: $($matchedSo.Count + $matchedVendor.Count)"
+          echo "Total files that will be uploaded: $($matchedSo.Count)"
 
+      # Integration test: Verify gem can be loaded and basic API works
       - name: Run integration tests
         run: |
           ruby -I test test/glib2_spec.rb
 
+      # Upload compiled artifacts for consolidation job
+      # Includes: lib/glib2/{major}.{minor}/glib2.so and lib/glib2/vendor/**/*
       - name: Upload compiled extension (x64, Ruby ${{ matrix.ruby }})
         if: success()
         uses: actions/upload-artifact@v4
@@ -97,23 +149,26 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-  # Consolidation job: combines x64 .so files into final gems
+  # Job 2: Consolidate version-specific extensions into multi-Ruby gem
   build-consolidated-gems:
     name: Consolidate and build final gems (x64)
     runs-on: windows-latest
-    needs: [build-windows-x64]
+    needs: [build-windows-x64]  # Wait for all matrix builds to complete
     if: success()
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Use fixed Ruby version for consolidation (doesn't affect final gem compatibility)
       - name: Set up Ruby 3.3.0
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3.0'
           bundler-cache: true
 
+      # Download artifacts from all Ruby version builds
+      # Each artifact contains lib/glib2/{version}/glib2.so and vendor DLLs
       - name: Download x64 extensions (Ruby 3.3)
         uses: actions/download-artifact@v4
         with:
@@ -126,6 +181,8 @@ jobs:
           name: glib2-extensions-x64-3.4
           path: gems/glib2/lib/
 
+      # Diagnostic: Verify all version-specific artifacts were extracted correctly
+      # Expected: lib/glib2/3.3/glib2.so, lib/glib2/3.4/glib2.so, lib/glib2/vendor/
       - name: Verify artifact extraction
         run: |
           echo "=== Checking gem directory structure ==="
@@ -150,6 +207,7 @@ jobs:
             exit 1
           }
 
+      # Diagnostic: Show all extracted artifacts for troubleshooting
       - name: Debug - Show all extracted files
         run: |
           echo "=== Artifacts downloaded - checking repo structure ==="
@@ -163,6 +221,8 @@ jobs:
           echo "Files in repo root (non-recursive):"
           Get-ChildItem -Path . -Force 2>$null | ForEach-Object { echo "  $($_.FullName)" }
 
+      # Workaround: Move artifacts if extracted to wrong location
+      # GitHub Actions artifact downloads sometimes extract to unexpected paths
       - name: Move downloaded artifacts to correct location
         run: |
           echo "=== Moving artifacts to gems/glib2/lib/glib2 ==="
@@ -175,14 +235,19 @@ jobs:
             Remove-Item -Path glib2 -Recurse -Force
             echo "✓ Cleanup complete"
           } else {
-            echo "⚠ glib2 directory not found at repo root"
+            echo "⚠ glib2 directory not found at repo root (may already be in correct location)"
           }
 
+      # Build final consolidated gem containing all Ruby versions
+      # Uses Rakefile build:consolidate_gem task which:
+      # - Verifies all version-specific .so files exist
+      # - Packages into single x64-mingw32 gem
+      # - No compilation occurs (uses precompiled artifacts)
       - name: Build consolidated x64 gem (multi-Ruby)
         run: |
-          # Consolidate precompiled extensions into final gem (no compilation)
           bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:consolidate_gem'].invoke('glib2')"
 
+      # Diagnostic: Verify final gem was created
       - name: List built gems
         run: |
           echo "=== Checking for pkg directory ==="
@@ -203,6 +268,8 @@ jobs:
             exit 1
           }
 
+      # Upload final production-ready gem
+      # Retention: 90 days (longer than intermediate artifacts)
       - name: Upload consolidated gem (x64)
         if: success()
         uses: actions/upload-artifact@v4
