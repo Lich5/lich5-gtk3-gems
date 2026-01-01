@@ -265,26 +265,19 @@ namespace :build do
       # Step 1: Compile native extension
       puts "  1. Compiling native extension for Ruby #{current_ruby_dot}..."
 
-      # Check if gem has wrapper extconf.rb (e.g., glib2, gio2, gobject-introspection)
-      # or only nested extconf.rb in ext/#{gem_name}/ (e.g., cairo, atk, gdk_pixbuf2)
-      if File.exist?('extconf.rb')
-        # Use wrapper pattern (generates in ext/#{gem_name}/ via wrapper)
+      # Run extconf.rb directly from nested ext/#{gem_name}/ directory
+      # This works for all gems - wrapper extconf.rb files are not used during builds
+      ext_dir = File.join('ext', gem_name)
+      unless Dir.exist?(ext_dir)
+        puts "❌ Extension directory not found: #{ext_dir}"
+        exit 1
+      end
+
+      Dir.chdir(ext_dir) do
         system('ruby extconf.rb') || (puts '❌ Failed to generate Makefile'
                                        exit 1)
         system('make') || (puts '❌ Failed to compile'
                            exit 1)
-      elsif File.exist?(File.join('ext', gem_name, 'extconf.rb'))
-        # Use direct pattern (run extconf.rb from nested directory)
-        ext_dir = File.join('ext', gem_name)
-        Dir.chdir(ext_dir) do
-          system('ruby extconf.rb') || (puts '❌ Failed to generate Makefile'
-                                         exit 1)
-          system('make') || (puts '❌ Failed to compile'
-                             exit 1)
-        end
-      else
-        puts "❌ No extconf.rb found in gem directory or ext/#{gem_name}/"
-        exit 1
       end
 
       # Find the compiled .so file
