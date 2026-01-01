@@ -182,7 +182,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: glib2-extensions-x64-${{ matrix.ruby }}
-          path: .
+          path: gems/glib2
 
       - name: Install glib2 dependency
         shell: msys2 {0}
