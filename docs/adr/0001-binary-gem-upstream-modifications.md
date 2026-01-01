@@ -30,9 +30,9 @@ Binary gems solve this by packaging:
 Users install with `gem install` - no compilation, no external dependencies.
 
 However, binary gems require modifications to upstream source (ruby-gnome) gemspec and loader code to:
-- Specify the target platform (x64-mingw32)
+- Specify the target platform (x64-mingw-ucrt for Ruby 3.1+)
 - Remove build-time dependencies
-- Support multi-Ruby versions (3.3, 3.4)
+- Support multi-Ruby versions (3.3, 3.4, 4.0)
 - Load bundled DLLs before native extension
 
 **Constraints:**
@@ -46,7 +46,7 @@ However, binary gems require modifications to upstream source (ruby-gnome) gemsp
 
 ## Decision
 
-**We will modify upstream ruby-gnome glib2 source with minimal, well-documented changes to support x64-mingw32 binary gem distribution.**
+**We will modify upstream ruby-gnome glib2 source with minimal, well-documented changes to support x64-mingw-ucrt binary gem distribution (Ruby 3.1+ on Windows).**
 
 All modifications will:
 1. Be limited to gemspec and lib/glib2.rb loader
@@ -59,8 +59,8 @@ All modifications will:
 ### Modification 1: gems/glib2/glib2.gemspec
 
 **Changes:**
-1. **Set platform:** `s.platform = Gem::Platform.new('x64-mingw32')`
-   - Marks gem as binary for Windows x64
+1. **Set platform:** `s.platform = Gem::Platform.new('x64-mingw-ucrt')`
+   - Marks gem as binary for Windows x64 (UCRT runtime, Ruby 3.1+)
    - RubyGems will skip compilation on install
 
 2. **Add binary file includes:**
@@ -102,7 +102,7 @@ All modifications will:
    major, minor, _ = RUBY_VERSION.split(/\./)
    require "glib2/#{major}.#{minor}/glib2.so"
    ```
-   - Loads from lib/glib2/3.3/glib2.so or lib/glib2/3.4/glib2.so
+   - Loads from lib/glib2/3.3/glib2.so, lib/glib2/3.4/glib2.so, or lib/glib2/4.0/glib2.so
    - Ruby versions have different ABIs - .so files are NOT interchangeable
    - Single gem supports multiple Ruby versions
 
@@ -180,7 +180,7 @@ The key insight: **upstream source integrity doesn't mean "never modify"** - it 
 - Zero-dependency gem installation for users (no build tools, no system GTK3)
 - Fast installation (no compilation - precompiled .so included)
 - Reliable installation (no compilation failures)
-- Multi-Ruby support (3.3, 3.4) in single gem
+- Multi-Ruby support (3.3, 3.4, 4.0) in single gem
 - Standard RubyGems workflow
 
 **Negative:**
@@ -283,5 +283,5 @@ All upstream Ruby helpers, signal handling, Enum/Flags classes, and Log module r
 
 ---
 
-**Last Updated:** 2025-12-30
-**Next Review:** 2026-03-30 (quarterly upstream sync check)
+**Last Updated:** 2026-01-01
+**Next Review:** 2026-04-01 (quarterly upstream sync check)
