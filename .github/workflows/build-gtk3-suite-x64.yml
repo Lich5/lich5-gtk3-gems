@@ -741,16 +741,6 @@ jobs:
           name: gobject-introspection-extensions-x64-${{ matrix.ruby }}
           path: gems/gobject-introspection
 
-      # Create rcairo symlink for check_cairo function in mkmf-gnome.rb
-      # The check_cairo helper looks for cairo at top_dir/../rcairo/ (sibling dir)
-      # but our structure has gems/cairo/, so we create a symlink at repo root
-      - name: Create rcairo symlink for cairo headers
-        shell: msys2 {0}
-        run: |
-          echo "Creating rcairo symlink for check_cairo in mkmf-gnome..."
-          ln -s gems/cairo rcairo
-          ls -la rcairo/
-
       - name: Copy .so files to expected locations
         shell: msys2 {0}
         run: |
@@ -765,6 +755,17 @@ jobs:
           # gobject_introspection.so (hyphen→underscore in .so name)
           mkdir -p gems/gobject-introspection/ext/gobject-introspection
           cp gems/gobject-introspection/lib/gobject-introspection/*/gobject_introspection.so gems/gobject-introspection/ext/gobject-introspection/
+
+      # Create rcairo directory for check_cairo function in mkmf-gnome.rb
+      # The check_cairo helper looks for cairo at top_dir/../rcairo/ (sibling dir)
+      # but our structure has gems/cairo/. Use copy (not symlink) because Windows
+      # native linker (ld.exe) doesn't follow MSYS2 symlinks.
+      - name: Create rcairo copy for cairo headers and linking
+        shell: msys2 {0}
+        run: |
+          echo "Creating rcairo copy for check_cairo and Windows linker..."
+          cp -r gems/cairo rcairo
+          ls -la rcairo/ext/cairo/
 
       - name: Install dependencies
         shell: msys2 {0}
@@ -1391,16 +1392,6 @@ jobs:
           name: gdk3-extensions-x64-${{ matrix.ruby }}
           path: gems/gdk3
 
-      # Create rcairo symlink for check_cairo function in mkmf-gnome.rb
-      # The check_cairo helper looks for cairo at top_dir/../rcairo/ (sibling dir)
-      # but our structure has gems/cairo/, so we create a symlink at repo root
-      - name: Create rcairo symlink for cairo headers
-        shell: msys2 {0}
-        run: |
-          echo "Creating rcairo symlink for check_cairo in mkmf-gnome..."
-          ln -s gems/cairo rcairo
-          ls -la rcairo/
-
       - name: Copy .so files to expected locations
         shell: msys2 {0}
         run: |
@@ -1425,6 +1416,17 @@ jobs:
           cp gems/atk/lib/atk/*/atk.so gems/atk/ext/atk/
           mkdir -p gems/gdk3/ext/gdk3
           cp gems/gdk3/lib/gdk3/*/gdk3.so gems/gdk3/ext/gdk3/
+
+      # Create rcairo directory for check_cairo function in mkmf-gnome.rb
+      # The check_cairo helper looks for cairo at top_dir/../rcairo/ (sibling dir)
+      # but our structure has gems/cairo/. Use copy (not symlink) because Windows
+      # native linker (ld.exe) doesn't follow MSYS2 symlinks.
+      - name: Create rcairo copy for cairo headers and linking
+        shell: msys2 {0}
+        run: |
+          echo "Creating rcairo copy for check_cairo and Windows linker..."
+          cp -r gems/cairo rcairo
+          ls -la rcairo/ext/cairo/
 
       - name: Install dependencies
         shell: msys2 {0}
