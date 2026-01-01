@@ -68,6 +68,19 @@ jobs:
         env:
           BINARY_GEM: 'true'
 
+      - name: Verify glib-enum-types.h was generated
+        shell: msys2 {0}
+        run: |
+          echo "Checking for generated glib-enum-types files..."
+          if [ -f gems/glib2/ext/glib2/glib-enum-types.h ]; then
+            echo "✓ glib-enum-types.h generated ($(stat -c%s gems/glib2/ext/glib2/glib-enum-types.h) bytes)"
+            ls -la gems/glib2/ext/glib2/glib-enum-types.*
+          else
+            echo "✗ glib-enum-types.h NOT generated - searching..."
+            find . -name "glib-enum-types.*" -type f
+            exit 1
+          fi
+
       - name: Upload glib2 extensions
         uses: actions/upload-artifact@v4
         with:
@@ -1221,6 +1234,14 @@ jobs:
           ruby-version: '3.3'
           bundler-cache: true
 
+      - name: Install MSYS2 for objdump
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            mingw-w64-ucrt-x86_64-toolchain
+
       - name: Download all gem artifacts
         uses: actions/download-artifact@v4
         with:
@@ -1237,16 +1258,15 @@ jobs:
           merge-multiple: true
 
       - name: Verify .so files exist
-        shell: bash
+        shell: msys2 {0}
         run: |
           echo "Checking for compiled .so files..."
           find gems -name "*.so" -type f | head -20 || echo "No .so files found"
 
       - name: Run DLL distribution discovery
-        shell: bash
+        shell: msys2 {0}
         run: |
           echo "Running DLL distribution analysis..."
-          echo "Note: Script requires MSYS2 objdump - may fail if not available"
           ruby scripts/discover-dll-distribution.rb > dll-distribution.json 2>analysis.log || {
             echo "Discovery script failed, showing logs:"
             cat analysis.log
@@ -1255,7 +1275,7 @@ jobs:
 
       - name: Display discovery summary
         if: always()
-        shell: bash
+        shell: msys2 {0}
         run: |
           echo "=== DLL Distribution Discovery Results ==="
           if [ -f analysis.log ]; then
