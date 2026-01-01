@@ -68,19 +68,6 @@ jobs:
         env:
           BINARY_GEM: 'true'
 
-      - name: Verify generated headers exist
-        shell: msys2 {0}
-        run: |
-          echo "Verifying generated headers in source tree..."
-          if [ -f gems/glib2/ext/glib2/glib-enum-types.h ]; then
-            echo "✓ glib-enum-types.h exists ($(stat -c%s gems/glib2/ext/glib2/glib-enum-types.h) bytes)"
-            ls -la gems/glib2/ext/glib2/glib-enum-types.*
-          else
-            echo "✗ glib-enum-types.h NOT generated"
-            find . -name "glib-enum-types.*" -type f 2>/dev/null
-            exit 1
-          fi
-
       - name: Upload glib2 extensions
         uses: actions/upload-artifact@v4
         with:
@@ -183,32 +170,6 @@ jobs:
         with:
           name: glib2-extensions-x64-${{ matrix.ruby }}
           path: .
-
-      - name: Verify glib2 headers after download
-        shell: msys2 {0}
-        run: |
-          echo "Verifying glib2 generated headers are available..."
-          ls -la gems/glib2/ext/glib2/*.h 2>/dev/null || echo "WARNING: No .h files found in gems/glib2/ext/glib2/"
-
-          if [ -f gems/glib2/ext/glib2/glib-enum-types.h ]; then
-            echo "✓ glib-enum-types.h available ($(stat -c%s gems/glib2/ext/glib2/glib-enum-types.h) bytes)"
-          else
-            echo "✗ glib-enum-types.h MISSING - attempting recovery..."
-
-            # Check if artifact was downloaded at all
-            if [ -d gems/glib2/ext/glib2 ]; then
-              echo "ext/glib2 directory exists, listing contents:"
-              ls -laR gems/glib2/ext/glib2/
-            else
-              echo "ext/glib2 directory does NOT exist - artifact download failed"
-            fi
-
-            # Try to find it anywhere in the workspace
-            echo "Searching entire workspace for glib-enum-types.h..."
-            find . -name "glib-enum-types.h" -type f 2>/dev/null | head -5 || echo "Not found anywhere"
-
-            echo "BUILD WILL LIKELY FAIL - generated header not available"
-          fi
 
       - name: Install glib2 dependency
         shell: msys2 {0}
@@ -560,25 +521,6 @@ jobs:
         with:
           name: cairo-extensions-x64-${{ matrix.ruby }}
           path: .
-
-      - name: Verify cairo headers after download
-        shell: msys2 {0}
-        run: |
-          echo "Verifying cairo rb_cairo.h header is available..."
-          if [ -f gems/cairo/ext/cairo/rb_cairo.h ]; then
-            echo "✓ rb_cairo.h available ($(stat -c%s gems/cairo/ext/cairo/rb_cairo.h) bytes)"
-          else
-            echo "✗ rb_cairo.h MISSING - cairo-gobject build will fail"
-            echo "Checking if cairo ext directory exists..."
-            if [ -d gems/cairo/ext/cairo ]; then
-              echo "ext/cairo directory exists, listing contents:"
-              ls -la gems/cairo/ext/cairo/
-            else
-              echo "ext/cairo directory does NOT exist - artifact download failed"
-            fi
-            echo "Searching for rb_cairo.h..."
-            find . -name "rb_cairo.h" -type f 2>/dev/null | head -5 || echo "Not found anywhere"
-          fi
 
       - name: Install dependencies
         shell: msys2 {0}

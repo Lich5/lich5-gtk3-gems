@@ -265,19 +265,13 @@ namespace :build do
       # Step 1: Compile native extension
       puts "  1. Compiling native extension for Ruby #{current_ruby_dot}..."
 
-      # Change to ext/#{gem_name}/ directory to run extconf.rb and make
-      ext_dir = File.join('ext', gem_name)
-      unless Dir.exist?(ext_dir)
-        puts "❌ Extension directory not found: #{ext_dir}"
-        exit 1
-      end
-
-      Dir.chdir(ext_dir) do
-        system('ruby extconf.rb') || (puts '❌ Failed to generate Makefile'
-                                       exit 1)
-        system('make') || (puts '❌ Failed to compile'
-                           exit 1)
-      end
+      # Run wrapper extconf.rb which creates build directory and calls real extconf.rb
+      # This matches upstream ruby-gnome pattern: wrapper creates ./ext/#{gem_name}/
+      # as build directory, then runs source extconf.rb from there
+      system('ruby extconf.rb') || (puts '❌ Failed to generate Makefile'
+                                     exit 1)
+      system('make') || (puts '❌ Failed to compile'
+                         exit 1)
 
       # Find the compiled .so file
       so_files = Dir.glob("ext/#{gem_name}/#{gem_name}.so")
