@@ -1222,3 +1222,81 @@ jobs:
           name: gem-gtk3-x64-mingw32
           path: pkg/gtk3-*.gem
           retention-days: 90
+
+  # ============================================================================
+  # DLL DISTRIBUTION DISCOVERY - Analyze complete suite for DLL allocation
+  # ============================================================================
+
+  discover-dll-distribution:
+    name: Discover DLL Distribution
+    runs-on: windows-latest
+    needs: [consolidate-glib2, consolidate-gobject-introspection, consolidate-gio2,
+            consolidate-cairo, consolidate-cairo-gobject, consolidate-pango,
+            consolidate-gdk-pixbuf2, consolidate-atk, consolidate-gdk3, consolidate-gtk3]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby 3.3
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Install MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gtk3
+            mingw-w64-x86_64-toolchain
+
+      - name: Download all gem artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gem-*-x64-mingw32
+          path: deps/
+          merge-multiple: true
+
+      - name: Download all extension artifacts (Ruby 3.3)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-extensions-x64-3.3'
+          path: .
+          merge-multiple: true
+
+      - name: Verify .so files exist
+        shell: msys2 {0}
+        run: |
+          echo "Checking for compiled .so files..."
+          find gems -name "*.so" -type f | head -20
+
+      - name: Run DLL distribution discovery
+        shell: msys2 {0}
+        run: |
+          echo "Running DLL distribution analysis..."
+          ruby scripts/discover-dll-distribution.rb > dll-distribution.json 2>analysis.log || {
+            echo "Discovery script failed, showing logs:"
+            cat analysis.log
+            exit 1
+          }
+
+      - name: Display discovery summary
+        shell: msys2 {0}
+        run: |
+          echo "=== DLL Distribution Discovery Results ==="
+          cat analysis.log | tail -30
+          echo ""
+          echo "=== Distribution Summary ==="
+          ruby -rjson -e 'data=JSON.parse(File.read("dll-distribution.json")); data["distribution"].each{|g,d| puts "  #{g}: #{d.count} DLLs"}'
+
+      - name: Upload discovery results
+        uses: actions/upload-artifact@v4
+        with:
+          name: dll-distribution-analysis
+          path: |
+            dll-distribution.json
+            analysis.log
+          retention-days: 90
