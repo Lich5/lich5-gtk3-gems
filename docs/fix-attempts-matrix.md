@@ -138,7 +138,7 @@ cp: cannot stat 'gems/glib2/lib/glib2/*/glib2.so': No such file or directory
 ## Session Context
 
 - **Session ID:** xRcFG
-- **Branch:** claude/review-fix-attempts-xRcFG
+- **Branch:** claude/fix19-so-naming-paths-xRcFG
 - **Status:** Fix #19 implemented, ready for testing
 - **Previous Session:** YT7Af (Fix #18)
 
@@ -149,3 +149,97 @@ Consider alternative approaches:
 2. Create symlinks instead of copies
 3. Modify Rakefile to copy .so during build
 4. Use custom extconf.rb wrapper to handle path resolution
+
+---
+
+## Session Summary: Fix #19 Development (Session xRcFG)
+
+### Problem Statement
+
+Fix #18 (Catch-22 resolution) failed with multiple errors indicating fundamental issues with file paths and naming conventions.
+
+### Debugging Timeline
+
+**Phase 1: Initial Error Analysis**
+
+User reported two distinct failures from Fix #18:
+
+1. **gobject-introspection build** - "No compiled .so file found"
+   - Compilation clearly succeeded: `linking shared-object gobject_introspection.so`
+   - But verification step failed immediately after
+
+2. **cairo-gobject build** - "cannot stat 'gems/glib2/lib/glib2/*/glib2.so'"
+   - .so copy step failed
+   - Files weren't at expected paths
+
+**Phase 2: Root Cause Discovery**
+
+Identified **two separate bugs**:
+
+| Bug | Location | Issue | Fix |
+|-----|----------|-------|-----|
+| 1 | Rakefile | Searched for `gobject-introspection.so` but compiler creates `gobject_introspection.so` | `module_name = gem_name.tr('-', '_')` |
+| 2 | Workflow | Pattern download with `path: .` loses `gems/` prefix due to LCA behavior | Individual downloads with explicit `path: gems/<gem>` |
+
+**Phase 3: First Fix Attempt**
+
+Applied fixes to:
+- `Rakefile`: Added hyphen→underscore conversion in `build_binary_gem` method
+- `.github/workflows/build-gtk3-suite-x64.yml`: Replaced pattern downloads with individual artifact downloads
+
+**Phase 4: Second Failure**
+
+After first fix, user reported continued failure:
+```
+❌ ERROR: No compiled .so file found for gobject-introspection
+Expected: ext/gobject-introspection/gobject-introspection.so
+```
+
+This revealed the same naming bug existed in the DLL extraction script.
+
+**Phase 5: Complete Fix**
+
+Fixed three locations total:
+
+| File | Method/Location | Fix Applied |
+|------|-----------------|-------------|
+| `Rakefile` | `build_binary_gem` | `module_name = gem_name.tr('-', '_')` |
+| `Rakefile` | `consolidate_precompiled_gem` | Same conversion + log message fix |
+| `scripts/extract-dll-dependencies.rb` | `find_so_file` | Same conversion applied |
+
+### Files Modified
+
+1. **Rakefile** (lines ~284-300, ~330-350)
+   - Build verification now uses correct module name
+   - .so copy step uses correct naming
+   - Log output shows both gem name and module name
+
+2. **scripts/extract-dll-dependencies.rb** (`find_so_file` method)
+   - Converts gem name to module name for .so file lookup
+   - Searches both `ext/<gem>/` and `lib/<gem>/**/` locations
+
+3. **.github/workflows/build-gtk3-suite-x64.yml** (already merged to main)
+   - Individual artifact downloads replace pattern downloads
+   - Explicit paths preserve `gems/` directory structure
+   - .so copy commands use correct underscore naming
+
+### Key Insight: The Naming Convention Rule
+
+Ruby gem ecosystem convention:
+- **Gem names** use hyphens: `gobject-introspection`, `cairo-gobject`
+- **Module/file names** use underscores: `gobject_introspection.so`, `cairo_gobject.so`
+
+This is standard Ruby practice but wasn't consistently applied across all scripts in this project.
+
+### Final Commits
+
+| Commit | Branch | Description |
+|--------|--------|-------------|
+| `ab75137` | `claude/fix19-so-naming-paths-xRcFG` | Complete hyphen→underscore .so naming fixes |
+| (earlier) | `main` (merged) | Workflow artifact download path fixes |
+
+### Status
+
+- **Branch:** `claude/fix19-so-naming-paths-xRcFG`
+- **State:** Ready for workflow trigger and testing
+- **Confidence:** High - all three naming mismatch locations identified and fixed
