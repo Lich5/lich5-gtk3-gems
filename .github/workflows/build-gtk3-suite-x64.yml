@@ -68,6 +68,19 @@ jobs:
         env:
           BINARY_GEM: 'true'
 
+      - name: Verify glib-enum-types.h was generated
+        shell: msys2 {0}
+        run: |
+          echo "Checking for generated glib-enum-types files..."
+          if [ -f gems/glib2/ext/glib2/glib-enum-types.h ]; then
+            echo "✓ glib-enum-types.h generated ($(stat -c%s gems/glib2/ext/glib2/glib-enum-types.h) bytes)"
+            ls -la gems/glib2/ext/glib2/glib-enum-types.*
+          else
+            echo "✗ glib-enum-types.h NOT generated - searching..."
+            find . -name "glib-enum-types.*" -type f
+            exit 1
+          fi
+
       - name: Upload glib2 extensions
         uses: actions/upload-artifact@v4
         with:
