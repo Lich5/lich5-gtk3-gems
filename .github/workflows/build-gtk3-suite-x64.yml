@@ -68,6 +68,17 @@ jobs:
         env:
           BINARY_GEM: 'true'
 
+      - name: Verify generated headers exist
+        shell: msys2 {0}
+        run: |
+          echo "Checking for generated headers in ext/glib2/..."
+          ls -la gems/glib2/ext/glib2/*.h 2>/dev/null || echo "WARNING: No .h files found"
+          if [ -f gems/glib2/ext/glib2/glib-enum-types.h ]; then
+            echo "✓ glib-enum-types.h exists"
+          else
+            echo "✗ glib-enum-types.h MISSING"
+          fi
+
       - name: Upload glib2 extensions
         uses: actions/upload-artifact@v4
         with:
@@ -170,6 +181,19 @@ jobs:
         with:
           name: glib2-extensions-x64-${{ matrix.ruby }}
           path: .
+
+      - name: Verify glib2 headers after download
+        shell: msys2 {0}
+        run: |
+          echo "Verifying glib2 generated headers are available..."
+          ls -la gems/glib2/ext/glib2/*.h 2>/dev/null || echo "WARNING: No .h files found in gems/glib2/ext/glib2/"
+          if [ -f gems/glib2/ext/glib2/glib-enum-types.h ]; then
+            echo "✓ glib-enum-types.h available for gobject-introspection build"
+          else
+            echo "✗ glib-enum-types.h MISSING - build will fail"
+            echo "Directory contents:"
+            find gems/glib2/ext -type f 2>/dev/null || echo "ext directory not found"
+          fi
 
       - name: Install glib2 dependency
         shell: msys2 {0}

@@ -396,6 +396,8 @@ class DLLDependencyExtractor
   # This enables dependency-aware bundling: if glib2 already bundles libglib-2.0-0.dll,
   # gobject-introspection won't duplicate it.
   #
+  # Checks both installed gem locations (for CI) and source tree (for local builds).
+  #
   # @return [Set<String>] Set of DLL filenames already provided by dependencies
   def get_dependency_provided_dlls
     gemspec_path = "gems/#{@gem_name}/#{@gem_name}.gemspec"
@@ -422,14 +424,36 @@ class DLLDependencyExtractor
     provided_dlls = Set.new
 
     runtime_deps.each do |dep_name|
-      vendor_path = "gems/#{dep_name}/vendor/local/bin"
+      # Try multiple locations to find dependency DLLs:
+      # 1. Installed gem location (CI environment after `gem install`)
+      # 2. Source tree location (local development builds)
+      vendor_paths = []
 
-      if Dir.exist?(vendor_path)
+      # Check installed gem first (CI scenario)
+      begin
+        require 'rubygems'
+        spec = Gem::Specification.find_by_name(dep_name)
+        if spec
+          installed_vendor_path = File.join(spec.gem_dir, 'vendor', 'local', 'bin')
+          vendor_paths << installed_vendor_path if Dir.exist?(installed_vendor_path)
+        end
+      rescue Gem::MissingSpecError
+        # Dependency not installed, will try source tree
+      end
+
+      # Check source tree (local development scenario)
+      source_vendor_path = "gems/#{dep_name}/vendor/local/bin"
+      vendor_paths << source_vendor_path if Dir.exist?(source_vendor_path)
+
+      if vendor_paths.any?
+        # Use the first valid path (prefer installed gem)
+        vendor_path = vendor_paths.first
         dep_dlls = Dir.glob(File.join(vendor_path, '*.dll')).map { |path| File.basename(path) }
-        puts "    - #{dep_name}: provides #{dep_dlls.count} DLL(s)"
+        location_type = vendor_path.start_with?('gems/') ? 'source tree' : 'installed gem'
+        puts "    - #{dep_name}: provides #{dep_dlls.count} DLL(s) [#{location_type}]"
         provided_dlls.merge(dep_dlls)
       else
-        puts "    - #{dep_name}: no vendor/local/bin found (may not be built yet)"
+        puts "    - #{dep_name}: no vendor/local/bin found (not installed or built yet)"
       end
     end
 
