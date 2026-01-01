@@ -777,6 +777,8 @@ jobs:
       - name: Build pango
         shell: msys2 {0}
         run: |
+          # Add gobject-introspection include path (pango includes GI headers that need girepository.h)
+          export CFLAGS="$CFLAGS $(pkg-config --cflags gobject-introspection-1.0)"
           bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('pango')"
         env:
           BINARY_GEM: 'true'
@@ -1440,6 +1442,8 @@ jobs:
       - name: Build gtk3
         shell: msys2 {0}
         run: |
+          # Add gobject-introspection include path (gtk3 includes GI headers that need girepository.h)
+          export CFLAGS="$CFLAGS $(pkg-config --cflags gobject-introspection-1.0)"
           bundle exec ruby -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('gtk3')"
         env:
           BINARY_GEM: 'true'
