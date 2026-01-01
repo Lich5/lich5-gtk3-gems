@@ -362,7 +362,7 @@ namespace :build do
       so_files.each { |f| puts "     - #{f}" }
 
       # Check for vendor DLLs
-      vendor_dir = File.join('lib', gem_name, 'vendor', 'bin')
+      vendor_dir = File.join('vendor', 'local', 'bin')
       if Dir.exist?(vendor_dir)
         dll_files = Dir.glob("#{vendor_dir}/*.dll")
         if dll_files.any?
