@@ -14,7 +14,7 @@ RUBY_VERSIONS = %w[
 ].freeze
 
 PLATFORMS = %w[
-  x64-mingw32
+  x64-mingw-ucrt
   x86_64-darwin
   arm64-darwin
   x86_64-linux
@@ -66,7 +66,7 @@ task :default do
   puts "GTK3 gems (#{GTK3_GEMS.count}): #{GTK3_GEMS.join(', ')}"
   puts "Other gems (#{OTHER_GEMS.count}): #{OTHER_GEMS.join(', ')}"
   puts ''
-  puts 'Primary platform: Windows (x64-mingw32)'
+  puts 'Primary platform: Windows (x64-mingw-ucrt)'
   puts "Future platforms: #{PLATFORMS[1..].join(', ')}"
   puts ''
   puts 'Available tasks:'

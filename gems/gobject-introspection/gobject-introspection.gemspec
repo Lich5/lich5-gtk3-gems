@@ -33,10 +33,11 @@ Gem::Specification.new do |s|
   s.licenses      = ["LGPL-2.1-or-later"]
   s.version       = ruby_glib2_version
 
-  # BINARY GEM MODIFICATION: Set platform to x64-mingw32 for Windows binary gem
+  # BINARY GEM MODIFICATION: Set platform to x64-mingw-ucrt for Windows binary gem
   # See docs/adr/0001-binary-gem-upstream-modifications.md
   # Binary gems are precompiled for specific platform, skip compilation at install time
-  s.platform      = Gem::Platform.new('x64-mingw32')
+  # Note: Ruby 3.1+ uses mingw-ucrt (not mingw32 which was for Ruby 2.4-3.0)
+  s.platform      = Gem::Platform.new('x64-mingw-ucrt')
 
   # BINARY GEM MODIFICATION: Remove extensions field for binary gem
   # See docs/adr/0001-binary-gem-upstream-modifications.md
