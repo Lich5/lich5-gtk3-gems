@@ -189,15 +189,21 @@ jobs:
         run: |
           gem install deps/glib2-*.gem
 
+      # Debug step to verify artifact extraction and header availability
+      # Review periodically to determine if still needed after builds stabilize
       - name: Debug - Check glib2 header locations
+        continue-on-error: true
         shell: msys2 {0}
         run: |
+          HEADERS_OK=0
+
           echo "=== Checking workspace glib2 ext directory ==="
           if [ -d gems/glib2/ext/glib2 ]; then
             echo "✓ gems/glib2/ext/glib2/ exists"
             ls -la gems/glib2/ext/glib2/*.h | head -10
             if [ -f gems/glib2/ext/glib2/glib-enum-types.h ]; then
               echo "✓ glib-enum-types.h found in workspace"
+              HEADERS_OK=1
             else
               echo "✗ glib-enum-types.h MISSING from workspace"
             fi
@@ -207,7 +213,7 @@ jobs:
 
           echo ""
           echo "=== Checking installed gem location ==="
-          GEM_PATH=$(ruby -e "puts Gem::Specification.find_by_name('glib2').full_gem_path rescue puts 'NOT_FOUND'")
+          GEM_PATH=$(ruby -e "puts Gem::Specification.find_by_name('glib2').full_gem_path rescue puts 'NOT_FOUND'" 2>/dev/null || echo "NOT_FOUND")
           echo "Installed gem path: $GEM_PATH"
           if [ "$GEM_PATH" != "NOT_FOUND" ] && [ -d "$GEM_PATH/ext/glib2" ]; then
             echo "✓ Installed gem ext/glib2/ exists"
@@ -218,7 +224,16 @@ jobs:
               echo "✗ glib-enum-types.h MISSING from installed gem"
             fi
           else
-            echo "✗ Installed gem ext/glib2/ does NOT exist"
+            echo "✗ Installed gem ext/glib2/ does NOT exist (expected if gem not yet installed)"
+          fi
+
+          # Exit successfully if workspace headers found (primary check)
+          if [ $HEADERS_OK -eq 1 ]; then
+            echo "✓ Debug check PASSED - headers available"
+            exit 0
+          else
+            echo "✗ Debug check FAILED - headers missing"
+            exit 1
           fi
 
       - name: Build gobject-introspection
@@ -330,13 +345,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: glib2-extensions-x64-${{ matrix.ruby }}
-          path: .
+          path: gems/glib2
 
       - name: Download dependency ext headers (gobject-introspection)
         uses: actions/download-artifact@v4
         with:
           name: gobject-introspection-extensions-x64-${{ matrix.ruby }}
-          path: .
+          path: gems/gobject-introspection
 
       - name: Install dependencies
         shell: msys2 {0}
@@ -559,13 +574,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: glib2-extensions-x64-${{ matrix.ruby }}
-          path: .
+          path: gems/glib2
 
       - name: Download dependency ext headers (cairo)
         uses: actions/download-artifact@v4
         with:
           name: cairo-extensions-x64-${{ matrix.ruby }}
-          path: .
+          path: gems/cairo
 
       - name: Install dependencies
         shell: msys2 {0}
@@ -1266,13 +1281,8 @@ jobs:
           ruby-version: '3.3'
           bundler-cache: true
 
-      - name: Install MSYS2 for objdump
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: UCRT64
-          update: false
-          install: >-
-            mingw-w64-ucrt-x86_64-toolchain
+      # Note: windows-latest already has MSYS2 installed with objdump available
+      # No need to install MSYS2 again (causes conflict)
 
       - name: Download all gem artifacts
         uses: actions/download-artifact@v4
@@ -1290,15 +1300,17 @@ jobs:
           merge-multiple: true
 
       - name: Verify .so files exist
-        shell: msys2 {0}
+        shell: bash
         run: |
           echo "Checking for compiled .so files..."
           find gems -name "*.so" -type f | head -20 || echo "No .so files found"
 
       - name: Run DLL distribution discovery
-        shell: msys2 {0}
+        shell: bash
         run: |
           echo "Running DLL distribution analysis..."
+          # Add MSYS2 to PATH for objdump
+          export PATH="/c/msys64/ucrt64/bin:$PATH"
           ruby scripts/discover-dll-distribution.rb > dll-distribution.json 2>analysis.log || {
             echo "Discovery script failed, showing logs:"
             cat analysis.log
@@ -1307,7 +1319,7 @@ jobs:
 
       - name: Display discovery summary
         if: always()
-        shell: msys2 {0}
+        shell: bash
         run: |
           echo "=== DLL Distribution Discovery Results ==="
           if [ -f analysis.log ]; then
