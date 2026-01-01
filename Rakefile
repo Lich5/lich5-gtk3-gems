@@ -362,7 +362,7 @@ namespace :build do
       so_files.each { |f| puts "     - #{f}" }
 
       # Check for vendor DLLs
-      vendor_dir = File.join('lib', gem_name, 'vendor', 'bin')
+      vendor_dir = File.join('vendor', 'local', 'bin')
       if Dir.exist?(vendor_dir)
         dll_files = Dir.glob("#{vendor_dir}/*.dll")
         if dll_files.any?
@@ -415,19 +415,20 @@ namespace :build do
     script_path = File.expand_path('scripts/extract-dll-dependencies.rb', __dir__)
 
     unless File.exist?(script_path)
-      puts "  ⚠️  WARNING: DLL extraction script not found at #{script_path}"
-      puts '     Skipping deterministic DLL extraction'
-      return
+      puts "❌ DLL extraction script not found at #{script_path}"
+      puts '   Cannot build binary gem without DLL bundling'
+      exit 1
     end
 
     # Run the extraction script from the gem directory
     cmd = "ruby #{script_path} #{gem_name} #{architecture}"
     result = system(cmd)
 
-    return if result
-
-    puts '  ⚠️  WARNING: DLL extraction script failed'
-    puts '     This may result in missing DLL dependencies'
+    unless result
+      puts '❌ DLL extraction script failed'
+      puts '   Cannot build binary gem without DLL bundling'
+      exit 1
+    end
   end
 end
 
