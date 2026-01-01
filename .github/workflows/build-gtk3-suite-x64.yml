@@ -1230,6 +1230,7 @@ jobs:
   discover-dll-distribution:
     name: Discover DLL Distribution
     runs-on: windows-latest
+    if: always()  # Run even if some builds fail
     needs: [consolidate-glib2, consolidate-gobject-introspection, consolidate-gio2,
             consolidate-cairo, consolidate-cairo-gobject, consolidate-pango,
             consolidate-gdk-pixbuf2, consolidate-atk, consolidate-gdk3, consolidate-gtk3]
@@ -1262,6 +1263,7 @@ jobs:
 
       - name: Download all extension artifacts (Ruby 3.3)
         uses: actions/download-artifact@v4
+        continue-on-error: true  # Some may not exist if builds failed
         with:
           pattern: '*-extensions-x64-3.3'
           path: .
