@@ -705,6 +705,7 @@ jobs:
             mingw-w64-x86_64-pango
             mingw-w64-x86_64-cairo
             mingw-w64-x86_64-glib2
+            mingw-w64-x86_64-gobject-introspection
             mingw-w64-x86_64-toolchain
             pkg-config
 
@@ -734,6 +735,12 @@ jobs:
           name: cairo-gobject-extensions-x64-${{ matrix.ruby }}
           path: gems/cairo-gobject
 
+      - name: Download gobject-introspection ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: gobject-introspection-extensions-x64-${{ matrix.ruby }}
+          path: gems/gobject-introspection
+
       # Create rcairo symlink for check_cairo function in mkmf-gnome.rb
       # The check_cairo helper looks for cairo at top_dir/../rcairo/ (sibling dir)
       # but our structure has gems/cairo/, so we create a symlink at repo root
@@ -755,11 +762,15 @@ jobs:
           # cairo_gobject.so (hyphen→underscore in .so name)
           mkdir -p gems/cairo-gobject/ext/cairo-gobject
           cp gems/cairo-gobject/lib/cairo-gobject/*/cairo_gobject.so gems/cairo-gobject/ext/cairo-gobject/
+          # gobject_introspection.so (hyphen→underscore in .so name)
+          mkdir -p gems/gobject-introspection/ext/gobject-introspection
+          cp gems/gobject-introspection/lib/gobject-introspection/*/gobject_introspection.so gems/gobject-introspection/ext/gobject-introspection/
 
       - name: Install dependencies
         shell: msys2 {0}
         run: |
           gem install deps/glib2-*.gem
+          gem install deps/gobject-introspection-*.gem
           gem install deps/cairo-*.gem
           gem install deps/cairo-gobject-*.gem
 
