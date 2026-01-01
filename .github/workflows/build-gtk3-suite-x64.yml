@@ -178,37 +178,46 @@ jobs:
           name: gem-glib2-x64-mingw32
           path: deps/
 
+      - name: Download glib2 ext headers (Ruby ${{ matrix.ruby }})
+        uses: actions/download-artifact@v4
+        with:
+          name: glib2-extensions-x64-${{ matrix.ruby }}
+          path: gems/glib2
+
+      - name: Copy glib2.so to expected location
+        shell: msys2 {0}
+        run: |
+          echo "Copying glib2.so from lib/ to ext/ for workspace linking..."
+          mkdir -p gems/glib2/ext/glib2
+          cp gems/glib2/lib/glib2/*/glib2.so gems/glib2/ext/glib2/ || {
+            echo "Failed to copy glib2.so, checking what exists:"
+            find gems/glib2 -name "*.so"
+            exit 1
+          }
+          ls -la gems/glib2/ext/glib2/glib2.so
+
       - name: Install glib2 dependency
         shell: msys2 {0}
         run: |
           gem install deps/glib2-*.gem
 
-      # Debug step to verify installed gem has headers (no longer downloading ext/ artifacts)
+      # Debug step to verify headers available in workspace
       # Review periodically to determine if still needed after builds stabilize
-      - name: Debug - Check glib2 header in installed gem
+      - name: Debug - Check glib2 artifacts in workspace
         continue-on-error: true
         shell: msys2 {0}
         run: |
-          echo "=== Checking installed gem location ==="
-          GEM_PATH=$(ruby -e "puts Gem::Specification.find_by_name('glib2').full_gem_path" 2>&1)
-          if [ $? -eq 0 ]; then
-            echo "Installed gem path: $GEM_PATH"
-            if [ -d "$GEM_PATH/ext/glib2" ]; then
-              echo "✓ Installed gem ext/glib2/ exists"
-              ls -la "$GEM_PATH/ext/glib2/"*.h 2>/dev/null | head -10
-              if [ -f "$GEM_PATH/ext/glib2/glib-enum-types.h" ]; then
-                echo "✓ glib-enum-types.h found in installed gem"
-                exit 0
-              else
-                echo "✗ glib-enum-types.h MISSING from installed gem"
-                exit 1
-              fi
-            else
-              echo "✗ Installed gem ext/glib2/ does NOT exist"
-              exit 1
-            fi
+          echo "=== Checking workspace artifacts ==="
+          if [ -f "gems/glib2/ext/glib2/glib-enum-types.h" ]; then
+            echo "✓ glib-enum-types.h found in workspace"
           else
-            echo "✗ Could not find installed glib2 gem"
+            echo "✗ glib-enum-types.h MISSING from workspace"
+            exit 1
+          fi
+          if [ -f "gems/glib2/ext/glib2/glib2.so" ]; then
+            echo "✓ glib2.so found at expected location"
+          else
+            echo "✗ glib2.so MISSING from expected location"
             exit 1
           fi
 
@@ -316,6 +325,22 @@ jobs:
           pattern: gem-*-x64-mingw32
           path: deps/
           merge-multiple: true
+
+      - name: Download dependency ext headers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-extensions-x64-${{ matrix.ruby }}'
+          path: .
+          merge-multiple: true
+
+      - name: Copy .so files to expected locations
+        shell: msys2 {0}
+        run: |
+          echo "Copying .so files from lib/ to ext/ for workspace linking..."
+          mkdir -p gems/glib2/ext/glib2
+          cp gems/glib2/lib/glib2/*/glib2.so gems/glib2/ext/glib2/
+          mkdir -p gems/gobject-introspection/ext/gobject-introspection
+          cp gems/gobject-introspection/lib/gobject_introspection/*/gobject_introspection.so gems/gobject-introspection/ext/gobject-introspection/
 
       - name: Install dependencies
         shell: msys2 {0}
@@ -425,6 +450,20 @@ jobs:
           name: gem-glib2-x64-mingw32
           path: deps/
 
+      - name: Download glib2 ext headers (Ruby ${{ matrix.ruby }})
+        uses: actions/download-artifact@v4
+        with:
+          name: glib2-extensions-x64-${{ matrix.ruby }}
+          path: gems/glib2
+
+      - name: Copy glib2.so to expected location
+        shell: msys2 {0}
+        run: |
+          echo "Copying glib2.so from lib/ to ext/ for workspace linking..."
+          mkdir -p gems/glib2/ext/glib2
+          cp gems/glib2/lib/glib2/*/glib2.so gems/glib2/ext/glib2/
+          ls -la gems/glib2/ext/glib2/glib2.so
+
       - name: Install glib2 dependency
         shell: msys2 {0}
         run: |
@@ -533,6 +572,22 @@ jobs:
           pattern: gem-*-x64-mingw32
           path: deps/
           merge-multiple: true
+
+      - name: Download dependency ext headers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-extensions-x64-${{ matrix.ruby }}'
+          path: .
+          merge-multiple: true
+
+      - name: Copy .so files to expected locations
+        shell: msys2 {0}
+        run: |
+          echo "Copying .so files from lib/ to ext/ for workspace linking..."
+          mkdir -p gems/glib2/ext/glib2
+          cp gems/glib2/lib/glib2/*/glib2.so gems/glib2/ext/glib2/
+          mkdir -p gems/cairo/ext/cairo
+          cp gems/cairo/lib/cairo/*/cairo.so gems/cairo/ext/cairo/
 
       - name: Install dependencies
         shell: msys2 {0}
@@ -651,6 +706,17 @@ jobs:
           pattern: '*-extensions-x64-${{ matrix.ruby }}'
           path: .
           merge-multiple: true
+
+      - name: Copy .so files to expected locations
+        shell: msys2 {0}
+        run: |
+          echo "Copying .so files from lib/ to ext/ for workspace linking..."
+          mkdir -p gems/glib2/ext/glib2
+          cp gems/glib2/lib/glib2/*/glib2.so gems/glib2/ext/glib2/
+          mkdir -p gems/cairo/ext/cairo
+          cp gems/cairo/lib/cairo/*/cairo.so gems/cairo/ext/cairo/
+          mkdir -p gems/cairo-gobject/ext/cairo-gobject
+          cp gems/cairo-gobject/lib/cairo_gobject/*/cairo_gobject.so gems/cairo-gobject/ext/cairo-gobject/
 
       - name: Install dependencies
         shell: msys2 {0}
@@ -771,6 +837,15 @@ jobs:
           path: .
           merge-multiple: true
 
+      - name: Copy .so files to expected locations
+        shell: msys2 {0}
+        run: |
+          echo "Copying .so files from lib/ to ext/ for workspace linking..."
+          mkdir -p gems/glib2/ext/glib2
+          cp gems/glib2/lib/glib2/*/glib2.so gems/glib2/ext/glib2/
+          mkdir -p gems/gobject-introspection/ext/gobject-introspection
+          cp gems/gobject-introspection/lib/gobject_introspection/*/gobject_introspection.so gems/gobject-introspection/ext/gobject-introspection/
+
       - name: Install dependencies
         shell: msys2 {0}
         run: |
@@ -888,6 +963,15 @@ jobs:
           pattern: '*-extensions-x64-${{ matrix.ruby }}'
           path: .
           merge-multiple: true
+
+      - name: Copy .so files to expected locations
+        shell: msys2 {0}
+        run: |
+          echo "Copying .so files from lib/ to ext/ for workspace linking..."
+          mkdir -p gems/glib2/ext/glib2
+          cp gems/glib2/lib/glib2/*/glib2.so gems/glib2/ext/glib2/
+          mkdir -p gems/gobject-introspection/ext/gobject-introspection
+          cp gems/gobject-introspection/lib/gobject_introspection/*/gobject_introspection.so gems/gobject-introspection/ext/gobject-introspection/
 
       - name: Install dependencies
         shell: msys2 {0}
@@ -1009,6 +1093,25 @@ jobs:
           pattern: '*-extensions-x64-${{ matrix.ruby }}'
           path: .
           merge-multiple: true
+
+      - name: Copy .so files to expected locations
+        shell: msys2 {0}
+        run: |
+          echo "Copying .so files from lib/ to ext/ for workspace linking..."
+          mkdir -p gems/glib2/ext/glib2
+          cp gems/glib2/lib/glib2/*/glib2.so gems/glib2/ext/glib2/
+          mkdir -p gems/gobject-introspection/ext/gobject-introspection
+          cp gems/gobject-introspection/lib/gobject_introspection/*/gobject_introspection.so gems/gobject-introspection/ext/gobject-introspection/
+          mkdir -p gems/gio2/ext/gio2
+          cp gems/gio2/lib/gio2/*/gio2.so gems/gio2/ext/gio2/
+          mkdir -p gems/cairo/ext/cairo
+          cp gems/cairo/lib/cairo/*/cairo.so gems/cairo/ext/cairo/
+          mkdir -p gems/cairo-gobject/ext/cairo-gobject
+          cp gems/cairo-gobject/lib/cairo_gobject/*/cairo_gobject.so gems/cairo-gobject/ext/cairo-gobject/
+          mkdir -p gems/pango/ext/pango
+          cp gems/pango/lib/pango/*/pango.so gems/pango/ext/pango/
+          mkdir -p gems/gdk_pixbuf2/ext/gdk_pixbuf2
+          cp gems/gdk_pixbuf2/lib/gdk_pixbuf2/*/gdk_pixbuf2.so gems/gdk_pixbuf2/ext/gdk_pixbuf2/
 
       - name: Install dependencies
         shell: msys2 {0}
@@ -1136,6 +1239,29 @@ jobs:
           pattern: '*-extensions-x64-${{ matrix.ruby }}'
           path: .
           merge-multiple: true
+
+      - name: Copy .so files to expected locations
+        shell: msys2 {0}
+        run: |
+          echo "Copying .so files from lib/ to ext/ for workspace linking..."
+          mkdir -p gems/glib2/ext/glib2
+          cp gems/glib2/lib/glib2/*/glib2.so gems/glib2/ext/glib2/
+          mkdir -p gems/gobject-introspection/ext/gobject-introspection
+          cp gems/gobject-introspection/lib/gobject_introspection/*/gobject_introspection.so gems/gobject-introspection/ext/gobject-introspection/
+          mkdir -p gems/gio2/ext/gio2
+          cp gems/gio2/lib/gio2/*/gio2.so gems/gio2/ext/gio2/
+          mkdir -p gems/cairo/ext/cairo
+          cp gems/cairo/lib/cairo/*/cairo.so gems/cairo/ext/cairo/
+          mkdir -p gems/cairo-gobject/ext/cairo-gobject
+          cp gems/cairo-gobject/lib/cairo_gobject/*/cairo_gobject.so gems/cairo-gobject/ext/cairo-gobject/
+          mkdir -p gems/pango/ext/pango
+          cp gems/pango/lib/pango/*/pango.so gems/pango/ext/pango/
+          mkdir -p gems/gdk_pixbuf2/ext/gdk_pixbuf2
+          cp gems/gdk_pixbuf2/lib/gdk_pixbuf2/*/gdk_pixbuf2.so gems/gdk_pixbuf2/ext/gdk_pixbuf2/
+          mkdir -p gems/atk/ext/atk
+          cp gems/atk/lib/atk/*/atk.so gems/atk/ext/atk/
+          mkdir -p gems/gdk3/ext/gdk3
+          cp gems/gdk3/lib/gdk3/*/gdk3.so gems/gdk3/ext/gdk3/
 
       - name: Install dependencies
         shell: msys2 {0}
