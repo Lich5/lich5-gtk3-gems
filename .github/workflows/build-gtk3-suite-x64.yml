@@ -68,20 +68,16 @@ jobs:
         env:
           BINARY_GEM: 'true'
 
-      - name: Copy generated headers to source tree
+      - name: Verify generated headers exist
         shell: msys2 {0}
         run: |
-          echo "Copying generated headers from build workspace to source tree..."
-
-          # Generated files are in workspace ext/glib2/, need them in gems/glib2/ext/glib2/
-          if [ -f ext/glib2/glib-enum-types.h ]; then
-            cp ext/glib2/glib-enum-types.h ext/glib2/glib-enum-types.c gems/glib2/ext/glib2/
-            echo "✓ Copied glib-enum-types.h and .c to gems/glib2/ext/glib2/"
+          echo "Verifying generated headers in source tree..."
+          if [ -f gems/glib2/ext/glib2/glib-enum-types.h ]; then
+            echo "✓ glib-enum-types.h exists ($(stat -c%s gems/glib2/ext/glib2/glib-enum-types.h) bytes)"
             ls -la gems/glib2/ext/glib2/glib-enum-types.*
           else
-            echo "✗ Generated headers not found at ext/glib2/"
-            echo "Searching workspace..."
-            find . -name "glib-enum-types.h" -type f 2>/dev/null | head -5
+            echo "✗ glib-enum-types.h NOT generated"
+            find . -name "glib-enum-types.*" -type f 2>/dev/null
             exit 1
           fi
 

@@ -21,6 +21,7 @@
 require 'json'
 require 'set'
 require 'pathname'
+require 'time'
 
 # GTK3 gems in dependency order
 GEMS = %w[
