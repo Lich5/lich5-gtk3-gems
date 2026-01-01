@@ -734,6 +734,16 @@ jobs:
           name: cairo-gobject-extensions-x64-${{ matrix.ruby }}
           path: gems/cairo-gobject
 
+      # Create rcairo symlink for check_cairo function in mkmf-gnome.rb
+      # The check_cairo helper looks for cairo at top_dir/../rcairo/ (sibling dir)
+      # but our structure has gems/cairo/, so we create a symlink at repo root
+      - name: Create rcairo symlink for cairo headers
+        shell: msys2 {0}
+        run: |
+          echo "Creating rcairo symlink for check_cairo in mkmf-gnome..."
+          ln -s gems/cairo rcairo
+          ls -la rcairo/
+
       - name: Copy .so files to expected locations
         shell: msys2 {0}
         run: |
@@ -1367,6 +1377,16 @@ jobs:
         with:
           name: gdk3-extensions-x64-${{ matrix.ruby }}
           path: gems/gdk3
+
+      # Create rcairo symlink for check_cairo function in mkmf-gnome.rb
+      # The check_cairo helper looks for cairo at top_dir/../rcairo/ (sibling dir)
+      # but our structure has gems/cairo/, so we create a symlink at repo root
+      - name: Create rcairo symlink for cairo headers
+        shell: msys2 {0}
+        run: |
+          echo "Creating rcairo symlink for check_cairo in mkmf-gnome..."
+          ln -s gems/cairo rcairo
+          ls -la rcairo/
 
       - name: Copy .so files to expected locations
         shell: msys2 {0}
