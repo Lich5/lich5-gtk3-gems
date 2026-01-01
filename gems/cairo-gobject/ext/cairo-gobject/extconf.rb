@@ -32,7 +32,7 @@ package_id = "cairo-gobject"
 
 require "mkmf-gnome"
 
-["glib2"].each do |package|
+["glib2", "cairo"].each do |package|
   add_depend_package(package,
                      "#{package}/ext/#{package}",
                      top_dir.to_s,
