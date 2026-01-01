@@ -281,20 +281,24 @@ namespace :build do
       end
 
       # Find the compiled .so file
-      so_files = Dir.glob("ext/#{gem_name}/#{gem_name}.so")
+      # Note: Gem names may have hyphens but .so files use underscores
+      # e.g., "gobject-introspection" → "gobject_introspection.so"
+      module_name = gem_name.tr('-', '_')
+      so_files = Dir.glob("ext/#{gem_name}/#{module_name}.so")
       unless so_files.any?
-        puts '❌ No compiled .so file found'
+        puts "❌ No compiled .so file found (looking for ext/#{gem_name}/#{module_name}.so)"
         exit 1
       end
       so_file = so_files.first
 
       # Step 2: Copy to lib/#{gem_name}/{major}.{minor}/ directory
       # Use version-specific directory structure (matches upstream ruby-gnome pattern)
+      # Directory uses gem_name (with hyphens), file uses module_name (with underscores)
       lib_dir = File.join('lib', gem_name, current_ruby_dot)
       FileUtils.mkdir_p(lib_dir)
 
-      # Always name the .so as "#{gem_name}.so", version selection happens via directory
-      versioned_so = File.join(lib_dir, "#{gem_name}.so")
+      # Name the .so with module_name (underscores), matching upstream convention
+      versioned_so = File.join(lib_dir, "#{module_name}.so")
       FileUtils.cp(so_file, versioned_so)
       puts "  ✅ Compiled extension copied to lib/#{gem_name}/#{current_ruby_dot}/ as #{gem_name}.so"
 
@@ -350,12 +354,15 @@ namespace :build do
       puts '  1. Verifying precompiled extensions exist...'
       lib_dir = File.join('lib', gem_name)
 
-      so_files = Dir.glob("#{lib_dir}/*/#{gem_name}.so")
+      # Note: Gem names may have hyphens but .so files use underscores
+      # e.g., "gobject-introspection" → "gobject_introspection.so"
+      module_name = gem_name.tr('-', '_')
+      so_files = Dir.glob("#{lib_dir}/*/#{module_name}.so")
 
       if so_files.empty?
         puts "❌ No precompiled .so files found in #{lib_dir}/"
-        puts "   Expected structure: #{lib_dir}/{major}.{minor}/#{gem_name}.so"
-        puts "   (e.g., #{lib_dir}/3.3/#{gem_name}.so, #{lib_dir}/3.4/#{gem_name}.so)"
+        puts "   Expected structure: #{lib_dir}/{major}.{minor}/#{module_name}.so"
+        puts "   (e.g., #{lib_dir}/3.3/#{module_name}.so, #{lib_dir}/3.4/#{module_name}.so)"
         exit 1
       end
 

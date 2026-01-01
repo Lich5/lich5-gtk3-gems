@@ -21,7 +21,57 @@
 | 15 | Applied artifact path fix to atk | Added pattern download for all ext artifacts | Applied with fix #3 | Depends on glib2, gobject-introspection |
 | 16 | Applied artifact path fix to gdk3 | Added pattern download for all ext artifacts | Applied with fix #3 | Depends on all previous gems |
 | 17 | Applied artifact path fix to gtk3 | Added pattern download for all ext artifacts | Applied with fix #3 | Final gem in dependency chain |
-| 18 | **Current: Catch-22 resolution** | **Restored ext artifacts + .so copy steps** | **⏳ Testing in progress** | **All gems: download ext/ + cp lib/*/.so to ext/** |
+| 18 | Catch-22 resolution attempt | Restored ext artifacts + .so copy steps | ✗ Build failed | Pattern download + wrong .so names |
+| 19 | **Fix #18 failures: Two root causes identified** | **1. Pattern download loses gems/ prefix; 2. .so naming mismatch (hyphen→underscore)** | **⏳ Testing** | **See Fix #19 section below** |
+
+## Fix #19: Comprehensive Path and Naming Resolution
+
+### Root Cause Analysis from Fix #18 Failures
+
+**Failure 1: gobject-introspection "No compiled .so file found"**
+- Compilation succeeded: `linking shared-object gobject_introspection.so`
+- But Rakefile line 284 searched for: `ext/gobject-introspection/gobject-introspection.so`
+- Actual file created: `ext/gobject-introspection/gobject_introspection.so`
+- **Issue:** Gem names have hyphens, .so files use underscores
+
+**Failure 2: cairo-gobject "cannot stat" error**
+```
+cp: cannot stat 'gems/glib2/lib/glib2/*/glib2.so': No such file or directory
+```
+- Pattern download `path: .` with `merge-multiple: true` strips `gems/` prefix
+- Artifact LCA (Least Common Ancestor) = `gems/glib2/`
+- Files extracted to `lib/glib2/...` NOT `gems/glib2/lib/glib2/...`
+
+### Gem Name → Module Name Mapping
+
+| Gem Name | Module Name (.so) | Has Mismatch |
+|----------|------------------|--------------|
+| glib2 | glib2 | ✗ |
+| gobject-introspection | gobject_introspection | ✓ |
+| gio2 | gio2 | ✗ |
+| cairo | cairo | ✗ |
+| cairo-gobject | cairo_gobject | ✓ |
+| pango | pango | ✗ |
+| gdk_pixbuf2 | gdk_pixbuf2 | ✗ |
+| atk | atk | ✗ |
+| gdk3 | gdk3 | ✗ |
+| gtk3 | gtk3 | ✗ |
+
+### Fix #19 Implementation
+
+**1. Rakefile Changes:**
+- Convert gem_name to module_name: `module_name = gem_name.tr('-', '_')`
+- Find .so with: `Dir.glob("ext/#{gem_name}/#{module_name}.so")`
+- Copy .so with: `versioned_so = File.join(lib_dir, "#{module_name}.so")`
+
+**2. Workflow Changes:**
+- Replace pattern downloads with individual downloads per gem
+- Each download specifies correct path: `path: gems/<gem_name>`
+- Fix .so copy paths to use correct directory structure: `lib/<gem_name>/*/`
+
+**3. Copy Command Corrections:**
+- Before: `cp gems/glib2/lib/glib2/*/glib2.so ...`
+- After (for gobject-introspection): `cp gems/gobject-introspection/lib/gobject-introspection/*/gobject_introspection.so ...`
 
 ## Current Architecture Understanding
 
@@ -87,15 +137,12 @@
 
 ## Session Context
 
-- **Session ID:** YT7Af
-- **Branch:** claude/restore-ext-artifacts-with-so-copy-YT7Af
-- **Status:** Workflow dispatched, testing in progress
-- **Token Usage:** ~57,700 / 200,000 (29%)
-- **Previous Branches:**
-  - claude/remove-ext-artifact-downloads-YT7Af (merged/deleted)
-  - claude/init-architect-mode-YT7Af (exists)
+- **Session ID:** xRcFG
+- **Branch:** claude/review-fix-attempts-xRcFG
+- **Status:** Fix #19 implemented, ready for testing
+- **Previous Session:** YT7Af (Fix #18)
 
-## Next Steps if Fix #18 Fails
+## Next Steps if Fix #19 Fails
 
 Consider alternative approaches:
 1. Modify mkmf-gnome.rb to check installed gem first

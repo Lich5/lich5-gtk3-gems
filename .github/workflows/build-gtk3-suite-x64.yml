@@ -326,21 +326,30 @@ jobs:
           path: deps/
           merge-multiple: true
 
-      - name: Download dependency ext headers
+      # Download each dependency artifact to its correct gems/ path
+      # (pattern download with path: . loses the gems/ prefix due to LCA behavior)
+      - name: Download glib2 ext artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: '*-extensions-x64-${{ matrix.ruby }}'
-          path: .
-          merge-multiple: true
+          name: glib2-extensions-x64-${{ matrix.ruby }}
+          path: gems/glib2
+
+      - name: Download gobject-introspection ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: gobject-introspection-extensions-x64-${{ matrix.ruby }}
+          path: gems/gobject-introspection
 
       - name: Copy .so files to expected locations
         shell: msys2 {0}
         run: |
           echo "Copying .so files from lib/ to ext/ for workspace linking..."
+          # glib2.so (no naming change needed)
           mkdir -p gems/glib2/ext/glib2
           cp gems/glib2/lib/glib2/*/glib2.so gems/glib2/ext/glib2/
+          # gobject_introspection.so (hyphen→underscore in .so name)
           mkdir -p gems/gobject-introspection/ext/gobject-introspection
-          cp gems/gobject-introspection/lib/gobject_introspection/*/gobject_introspection.so gems/gobject-introspection/ext/gobject-introspection/
+          cp gems/gobject-introspection/lib/gobject-introspection/*/gobject_introspection.so gems/gobject-introspection/ext/gobject-introspection/
 
       - name: Install dependencies
         shell: msys2 {0}
@@ -573,12 +582,18 @@ jobs:
           path: deps/
           merge-multiple: true
 
-      - name: Download dependency ext headers
+      # Download each dependency artifact to its correct gems/ path
+      - name: Download glib2 ext artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: '*-extensions-x64-${{ matrix.ruby }}'
-          path: .
-          merge-multiple: true
+          name: glib2-extensions-x64-${{ matrix.ruby }}
+          path: gems/glib2
+
+      - name: Download cairo ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: cairo-extensions-x64-${{ matrix.ruby }}
+          path: gems/cairo
 
       - name: Copy .so files to expected locations
         shell: msys2 {0}
@@ -700,12 +715,24 @@ jobs:
           path: deps/
           merge-multiple: true
 
-      - name: Download dependency ext headers
+      # Download each dependency artifact to its correct gems/ path
+      - name: Download glib2 ext artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: '*-extensions-x64-${{ matrix.ruby }}'
-          path: .
-          merge-multiple: true
+          name: glib2-extensions-x64-${{ matrix.ruby }}
+          path: gems/glib2
+
+      - name: Download cairo ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: cairo-extensions-x64-${{ matrix.ruby }}
+          path: gems/cairo
+
+      - name: Download cairo-gobject ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: cairo-gobject-extensions-x64-${{ matrix.ruby }}
+          path: gems/cairo-gobject
 
       - name: Copy .so files to expected locations
         shell: msys2 {0}
@@ -715,8 +742,9 @@ jobs:
           cp gems/glib2/lib/glib2/*/glib2.so gems/glib2/ext/glib2/
           mkdir -p gems/cairo/ext/cairo
           cp gems/cairo/lib/cairo/*/cairo.so gems/cairo/ext/cairo/
+          # cairo_gobject.so (hyphen→underscore in .so name)
           mkdir -p gems/cairo-gobject/ext/cairo-gobject
-          cp gems/cairo-gobject/lib/cairo_gobject/*/cairo_gobject.so gems/cairo-gobject/ext/cairo-gobject/
+          cp gems/cairo-gobject/lib/cairo-gobject/*/cairo_gobject.so gems/cairo-gobject/ext/cairo-gobject/
 
       - name: Install dependencies
         shell: msys2 {0}
@@ -830,12 +858,18 @@ jobs:
           path: deps/
           merge-multiple: true
 
-      - name: Download dependency ext headers
+      # Download each dependency artifact to its correct gems/ path
+      - name: Download glib2 ext artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: '*-extensions-x64-${{ matrix.ruby }}'
-          path: .
-          merge-multiple: true
+          name: glib2-extensions-x64-${{ matrix.ruby }}
+          path: gems/glib2
+
+      - name: Download gobject-introspection ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: gobject-introspection-extensions-x64-${{ matrix.ruby }}
+          path: gems/gobject-introspection
 
       - name: Copy .so files to expected locations
         shell: msys2 {0}
@@ -843,8 +877,9 @@ jobs:
           echo "Copying .so files from lib/ to ext/ for workspace linking..."
           mkdir -p gems/glib2/ext/glib2
           cp gems/glib2/lib/glib2/*/glib2.so gems/glib2/ext/glib2/
+          # gobject_introspection.so (hyphen→underscore in .so name)
           mkdir -p gems/gobject-introspection/ext/gobject-introspection
-          cp gems/gobject-introspection/lib/gobject_introspection/*/gobject_introspection.so gems/gobject-introspection/ext/gobject-introspection/
+          cp gems/gobject-introspection/lib/gobject-introspection/*/gobject_introspection.so gems/gobject-introspection/ext/gobject-introspection/
 
       - name: Install dependencies
         shell: msys2 {0}
@@ -957,12 +992,18 @@ jobs:
           path: deps/
           merge-multiple: true
 
-      - name: Download dependency ext headers
+      # Download each dependency artifact to its correct gems/ path
+      - name: Download glib2 ext artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: '*-extensions-x64-${{ matrix.ruby }}'
-          path: .
-          merge-multiple: true
+          name: glib2-extensions-x64-${{ matrix.ruby }}
+          path: gems/glib2
+
+      - name: Download gobject-introspection ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: gobject-introspection-extensions-x64-${{ matrix.ruby }}
+          path: gems/gobject-introspection
 
       - name: Copy .so files to expected locations
         shell: msys2 {0}
@@ -970,8 +1011,9 @@ jobs:
           echo "Copying .so files from lib/ to ext/ for workspace linking..."
           mkdir -p gems/glib2/ext/glib2
           cp gems/glib2/lib/glib2/*/glib2.so gems/glib2/ext/glib2/
+          # gobject_introspection.so (hyphen→underscore in .so name)
           mkdir -p gems/gobject-introspection/ext/gobject-introspection
-          cp gems/gobject-introspection/lib/gobject_introspection/*/gobject_introspection.so gems/gobject-introspection/ext/gobject-introspection/
+          cp gems/gobject-introspection/lib/gobject-introspection/*/gobject_introspection.so gems/gobject-introspection/ext/gobject-introspection/
 
       - name: Install dependencies
         shell: msys2 {0}
@@ -1087,12 +1129,48 @@ jobs:
           path: deps/
           merge-multiple: true
 
-      - name: Download dependency ext headers
+      # Download each dependency artifact to its correct gems/ path
+      - name: Download glib2 ext artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: '*-extensions-x64-${{ matrix.ruby }}'
-          path: .
-          merge-multiple: true
+          name: glib2-extensions-x64-${{ matrix.ruby }}
+          path: gems/glib2
+
+      - name: Download gobject-introspection ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: gobject-introspection-extensions-x64-${{ matrix.ruby }}
+          path: gems/gobject-introspection
+
+      - name: Download gio2 ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: gio2-extensions-x64-${{ matrix.ruby }}
+          path: gems/gio2
+
+      - name: Download cairo ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: cairo-extensions-x64-${{ matrix.ruby }}
+          path: gems/cairo
+
+      - name: Download cairo-gobject ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: cairo-gobject-extensions-x64-${{ matrix.ruby }}
+          path: gems/cairo-gobject
+
+      - name: Download pango ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: pango-extensions-x64-${{ matrix.ruby }}
+          path: gems/pango
+
+      - name: Download gdk_pixbuf2 ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: gdk_pixbuf2-extensions-x64-${{ matrix.ruby }}
+          path: gems/gdk_pixbuf2
 
       - name: Copy .so files to expected locations
         shell: msys2 {0}
@@ -1100,14 +1178,16 @@ jobs:
           echo "Copying .so files from lib/ to ext/ for workspace linking..."
           mkdir -p gems/glib2/ext/glib2
           cp gems/glib2/lib/glib2/*/glib2.so gems/glib2/ext/glib2/
+          # gobject_introspection.so (hyphen→underscore in .so name)
           mkdir -p gems/gobject-introspection/ext/gobject-introspection
-          cp gems/gobject-introspection/lib/gobject_introspection/*/gobject_introspection.so gems/gobject-introspection/ext/gobject-introspection/
+          cp gems/gobject-introspection/lib/gobject-introspection/*/gobject_introspection.so gems/gobject-introspection/ext/gobject-introspection/
           mkdir -p gems/gio2/ext/gio2
           cp gems/gio2/lib/gio2/*/gio2.so gems/gio2/ext/gio2/
           mkdir -p gems/cairo/ext/cairo
           cp gems/cairo/lib/cairo/*/cairo.so gems/cairo/ext/cairo/
+          # cairo_gobject.so (hyphen→underscore in .so name)
           mkdir -p gems/cairo-gobject/ext/cairo-gobject
-          cp gems/cairo-gobject/lib/cairo_gobject/*/cairo_gobject.so gems/cairo-gobject/ext/cairo-gobject/
+          cp gems/cairo-gobject/lib/cairo-gobject/*/cairo_gobject.so gems/cairo-gobject/ext/cairo-gobject/
           mkdir -p gems/pango/ext/pango
           cp gems/pango/lib/pango/*/pango.so gems/pango/ext/pango/
           mkdir -p gems/gdk_pixbuf2/ext/gdk_pixbuf2
@@ -1233,12 +1313,60 @@ jobs:
           path: deps/
           merge-multiple: true
 
-      - name: Download dependency ext headers
+      # Download each dependency artifact to its correct gems/ path
+      - name: Download glib2 ext artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: '*-extensions-x64-${{ matrix.ruby }}'
-          path: .
-          merge-multiple: true
+          name: glib2-extensions-x64-${{ matrix.ruby }}
+          path: gems/glib2
+
+      - name: Download gobject-introspection ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: gobject-introspection-extensions-x64-${{ matrix.ruby }}
+          path: gems/gobject-introspection
+
+      - name: Download gio2 ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: gio2-extensions-x64-${{ matrix.ruby }}
+          path: gems/gio2
+
+      - name: Download cairo ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: cairo-extensions-x64-${{ matrix.ruby }}
+          path: gems/cairo
+
+      - name: Download cairo-gobject ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: cairo-gobject-extensions-x64-${{ matrix.ruby }}
+          path: gems/cairo-gobject
+
+      - name: Download pango ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: pango-extensions-x64-${{ matrix.ruby }}
+          path: gems/pango
+
+      - name: Download gdk_pixbuf2 ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: gdk_pixbuf2-extensions-x64-${{ matrix.ruby }}
+          path: gems/gdk_pixbuf2
+
+      - name: Download atk ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: atk-extensions-x64-${{ matrix.ruby }}
+          path: gems/atk
+
+      - name: Download gdk3 ext artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: gdk3-extensions-x64-${{ matrix.ruby }}
+          path: gems/gdk3
 
       - name: Copy .so files to expected locations
         shell: msys2 {0}
@@ -1246,14 +1374,16 @@ jobs:
           echo "Copying .so files from lib/ to ext/ for workspace linking..."
           mkdir -p gems/glib2/ext/glib2
           cp gems/glib2/lib/glib2/*/glib2.so gems/glib2/ext/glib2/
+          # gobject_introspection.so (hyphen→underscore in .so name)
           mkdir -p gems/gobject-introspection/ext/gobject-introspection
-          cp gems/gobject-introspection/lib/gobject_introspection/*/gobject_introspection.so gems/gobject-introspection/ext/gobject-introspection/
+          cp gems/gobject-introspection/lib/gobject-introspection/*/gobject_introspection.so gems/gobject-introspection/ext/gobject-introspection/
           mkdir -p gems/gio2/ext/gio2
           cp gems/gio2/lib/gio2/*/gio2.so gems/gio2/ext/gio2/
           mkdir -p gems/cairo/ext/cairo
           cp gems/cairo/lib/cairo/*/cairo.so gems/cairo/ext/cairo/
+          # cairo_gobject.so (hyphen→underscore in .so name)
           mkdir -p gems/cairo-gobject/ext/cairo-gobject
-          cp gems/cairo-gobject/lib/cairo_gobject/*/cairo_gobject.so gems/cairo-gobject/ext/cairo-gobject/
+          cp gems/cairo-gobject/lib/cairo-gobject/*/cairo_gobject.so gems/cairo-gobject/ext/cairo-gobject/
           mkdir -p gems/pango/ext/pango
           cp gems/pango/lib/pango/*/pango.so gems/pango/ext/pango/
           mkdir -p gems/gdk_pixbuf2/ext/gdk_pixbuf2
