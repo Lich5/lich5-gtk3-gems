@@ -345,13 +345,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: glib2-extensions-x64-${{ matrix.ruby }}
-          path: .
+          path: gems/glib2
 
       - name: Download dependency ext headers (gobject-introspection)
         uses: actions/download-artifact@v4
         with:
           name: gobject-introspection-extensions-x64-${{ matrix.ruby }}
-          path: .
+          path: gems/gobject-introspection
 
       - name: Install dependencies
         shell: msys2 {0}
@@ -574,13 +574,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: glib2-extensions-x64-${{ matrix.ruby }}
-          path: .
+          path: gems/glib2
 
       - name: Download dependency ext headers (cairo)
         uses: actions/download-artifact@v4
         with:
           name: cairo-extensions-x64-${{ matrix.ruby }}
-          path: .
+          path: gems/cairo
 
       - name: Install dependencies
         shell: msys2 {0}
