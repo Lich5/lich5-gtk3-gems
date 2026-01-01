@@ -300,7 +300,7 @@ namespace :build do
       # Name the .so with module_name (underscores), matching upstream convention
       versioned_so = File.join(lib_dir, "#{module_name}.so")
       FileUtils.cp(so_file, versioned_so)
-      puts "  ✅ Compiled extension copied to lib/#{gem_name}/#{current_ruby_dot}/ as #{gem_name}.so"
+      puts "  ✅ Compiled extension copied to lib/#{gem_name}/#{current_ruby_dot}/ as #{module_name}.so"
 
       # Step 2a: Extract DLL dependencies deterministically
       puts '  2a. Extracting DLL dependencies deterministically...'

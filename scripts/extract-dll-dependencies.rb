@@ -99,8 +99,10 @@ class DLLDependencyExtractor
     # Step 1: Find compiled .so file
     so_file = find_so_file
     unless so_file
+      # Convert gem name to module name for error message
+      module_name = @gem_name.tr('-', '_')
       puts "❌ ERROR: No compiled .so file found for #{@gem_name}"
-      puts "   Expected: ext/#{@gem_name}/#{@gem_name}.so or lib/#{@gem_name}/**/#{@gem_name}.so"
+      puts "   Expected: ext/#{@gem_name}/#{module_name}.so or lib/#{@gem_name}/**/#{module_name}.so"
       exit 1
     end
 
@@ -188,17 +190,25 @@ class DLLDependencyExtractor
 
   # Find compiled .so file in standard locations
   #
-  # Searches ext/<gem>/<gem>.so first (build location), then lib/<gem>/**/<gem>.so
+  # Searches ext/<gem>/<module>.so first (build location), then lib/<gem>/**/<module>.so
   # (post-copy location).
+  #
+  # Note: Gem names may have hyphens (gobject-introspection) but .so files use
+  # underscores (gobject_introspection.so). This method handles the conversion.
   #
   # @return [String, nil] Path to .so file, or nil if not found
   def find_so_file
+    # Convert gem name to module name (hyphen → underscore)
+    # e.g., "gobject-introspection" → "gobject_introspection"
+    module_name = @gem_name.tr('-', '_')
+
     # Look for compiled .so in standard locations
-    ext_path = "ext/#{@gem_name}/#{@gem_name}.so"
+    ext_path = "ext/#{@gem_name}/#{module_name}.so"
     return ext_path if File.exist?(ext_path)
 
     # Look in lib/ if it was already copied there
-    lib_pattern = "lib/#{@gem_name}/**/#{@gem_name}.so"
+    # Directory uses gem_name (with hyphens), file uses module_name (with underscores)
+    lib_pattern = "lib/#{@gem_name}/**/#{module_name}.so"
     lib_files = Dir.glob(lib_pattern)
     return lib_files.first if lib_files.any?
 
