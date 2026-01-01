@@ -169,7 +169,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: glib2-extensions-x64-${{ matrix.ruby }}
-          path: gems/glib2/
+          path: .
 
       - name: Install glib2 dependency
         shell: msys2 {0}
@@ -285,13 +285,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: glib2-extensions-x64-${{ matrix.ruby }}
-          path: gems/glib2/
+          path: .
 
       - name: Download dependency ext headers (gobject-introspection)
         uses: actions/download-artifact@v4
         with:
           name: gobject-introspection-extensions-x64-${{ matrix.ruby }}
-          path: gems/gobject-introspection/
+          path: .
 
       - name: Install dependencies
         shell: msys2 {0}
@@ -514,13 +514,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: glib2-extensions-x64-${{ matrix.ruby }}
-          path: gems/glib2/
+          path: .
 
       - name: Download dependency ext headers (cairo)
         uses: actions/download-artifact@v4
         with:
           name: cairo-extensions-x64-${{ matrix.ruby }}
-          path: gems/cairo/
+          path: .
 
       - name: Install dependencies
         shell: msys2 {0}
@@ -637,7 +637,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: '*-extensions-x64-${{ matrix.ruby }}'
-          path: gems/
+          path: .
           merge-multiple: true
 
       - name: Install dependencies
@@ -756,7 +756,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: '*-extensions-x64-${{ matrix.ruby }}'
-          path: gems/
+          path: .
           merge-multiple: true
 
       - name: Install dependencies
@@ -874,7 +874,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: '*-extensions-x64-${{ matrix.ruby }}'
-          path: gems/
+          path: .
           merge-multiple: true
 
       - name: Install dependencies
@@ -995,7 +995,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: '*-extensions-x64-${{ matrix.ruby }}'
-          path: gems/
+          path: .
           merge-multiple: true
 
       - name: Install dependencies
@@ -1122,7 +1122,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: '*-extensions-x64-${{ matrix.ruby }}'
-          path: gems/
+          path: .
           merge-multiple: true
 
       - name: Install dependencies
