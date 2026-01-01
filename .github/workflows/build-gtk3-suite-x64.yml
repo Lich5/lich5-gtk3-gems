@@ -189,15 +189,21 @@ jobs:
         run: |
           gem install deps/glib2-*.gem
 
+      # Debug step to verify artifact extraction and header availability
+      # Review periodically to determine if still needed after builds stabilize
       - name: Debug - Check glib2 header locations
+        continue-on-error: true
         shell: msys2 {0}
         run: |
+          HEADERS_OK=0
+
           echo "=== Checking workspace glib2 ext directory ==="
           if [ -d gems/glib2/ext/glib2 ]; then
             echo "✓ gems/glib2/ext/glib2/ exists"
             ls -la gems/glib2/ext/glib2/*.h | head -10
             if [ -f gems/glib2/ext/glib2/glib-enum-types.h ]; then
               echo "✓ glib-enum-types.h found in workspace"
+              HEADERS_OK=1
             else
               echo "✗ glib-enum-types.h MISSING from workspace"
             fi
@@ -207,7 +213,7 @@ jobs:
 
           echo ""
           echo "=== Checking installed gem location ==="
-          GEM_PATH=$(ruby -e "puts Gem::Specification.find_by_name('glib2').full_gem_path rescue puts 'NOT_FOUND'")
+          GEM_PATH=$(ruby -e "puts Gem::Specification.find_by_name('glib2').full_gem_path rescue puts 'NOT_FOUND'" 2>/dev/null || echo "NOT_FOUND")
           echo "Installed gem path: $GEM_PATH"
           if [ "$GEM_PATH" != "NOT_FOUND" ] && [ -d "$GEM_PATH/ext/glib2" ]; then
             echo "✓ Installed gem ext/glib2/ exists"
@@ -218,7 +224,16 @@ jobs:
               echo "✗ glib-enum-types.h MISSING from installed gem"
             fi
           else
-            echo "✗ Installed gem ext/glib2/ does NOT exist"
+            echo "✗ Installed gem ext/glib2/ does NOT exist (expected if gem not yet installed)"
+          fi
+
+          # Exit successfully if workspace headers found (primary check)
+          if [ $HEADERS_OK -eq 1 ]; then
+            echo "✓ Debug check PASSED - headers available"
+            exit 0
+          else
+            echo "✗ Debug check FAILED - headers missing"
+            exit 1
           fi
 
       - name: Build gobject-introspection
