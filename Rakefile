@@ -233,6 +233,19 @@ namespace :build do
     end
   end
 
+  # Check if a gem has native C extensions to compile
+  #
+  # Some gems (atk, gdk_pixbuf2, gdk3) use GObject Introspection only
+  # and don't have ext/<gem>/extconf.rb - they just need packaging.
+  #
+  # @param gem_name [String] Name of the gem (e.g., 'glib2')
+  # @return [Boolean] true if gem has native extensions, false if GI-only
+  def has_native_extension?(gem_name)
+    ext_dir = File.join('ext', gem_name)
+    extconf_path = File.join(ext_dir, 'extconf.rb')
+    Dir.exist?(ext_dir) && File.exist?(extconf_path)
+  end
+
   # Build Windows binary gem for a single Ruby version
   #
   # Compiles native extension, extracts DLL dependencies, and packages as binary gem.
@@ -262,51 +275,47 @@ namespace :build do
     begin
       Dir.chdir(gem_dir)
 
-      # Step 1: Compile native extension
-      puts "  1. Compiling native extension for Ruby #{current_ruby_dot}..."
+      if has_native_extension?(gem_name)
+        # Step 1: Compile native extension
+        puts "  1. Compiling native extension for Ruby #{current_ruby_dot}..."
 
-      # Run extconf.rb directly from nested ext/#{gem_name}/ directory
-      # This works for all gems - wrapper extconf.rb files are not used during builds
-      ext_dir = File.join('ext', gem_name)
-      unless Dir.exist?(ext_dir)
-        puts "❌ Extension directory not found: #{ext_dir}"
-        exit 1
+        ext_dir = File.join('ext', gem_name)
+        Dir.chdir(ext_dir) do
+          system('ruby extconf.rb') || (puts '❌ Failed to generate Makefile'
+                                         exit 1)
+          system('make') || (puts '❌ Failed to compile'
+                             exit 1)
+        end
+
+        # Find the compiled .so file
+        # Note: Gem names may have hyphens but .so files use underscores
+        # e.g., "gobject-introspection" → "gobject_introspection.so"
+        module_name = gem_name.tr('-', '_')
+        so_files = Dir.glob("ext/#{gem_name}/#{module_name}.so")
+        unless so_files.any?
+          puts "❌ No compiled .so file found (looking for ext/#{gem_name}/#{module_name}.so)"
+          exit 1
+        end
+        so_file = so_files.first
+
+        # Step 2: Copy to lib/#{gem_name}/{major}.{minor}/ directory
+        lib_dir = File.join('lib', gem_name, current_ruby_dot)
+        FileUtils.mkdir_p(lib_dir)
+
+        versioned_so = File.join(lib_dir, "#{module_name}.so")
+        FileUtils.cp(so_file, versioned_so)
+        puts "  ✅ Compiled extension copied to lib/#{gem_name}/#{current_ruby_dot}/ as #{module_name}.so"
+
+        # Step 2a: Extract DLL dependencies deterministically
+        puts '  2a. Extracting DLL dependencies deterministically...'
+        detect_and_copy_dll_dependencies(gem_name, versioned_so)
+      else
+        # GI-only gem (no native extension) - just package it
+        puts '  1. No native extension (GObject Introspection only) - skipping compilation'
+        so_file = nil
       end
 
-      Dir.chdir(ext_dir) do
-        system('ruby extconf.rb') || (puts '❌ Failed to generate Makefile'
-                                       exit 1)
-        system('make') || (puts '❌ Failed to compile'
-                           exit 1)
-      end
-
-      # Find the compiled .so file
-      # Note: Gem names may have hyphens but .so files use underscores
-      # e.g., "gobject-introspection" → "gobject_introspection.so"
-      module_name = gem_name.tr('-', '_')
-      so_files = Dir.glob("ext/#{gem_name}/#{module_name}.so")
-      unless so_files.any?
-        puts "❌ No compiled .so file found (looking for ext/#{gem_name}/#{module_name}.so)"
-        exit 1
-      end
-      so_file = so_files.first
-
-      # Step 2: Copy to lib/#{gem_name}/{major}.{minor}/ directory
-      # Use version-specific directory structure (matches upstream ruby-gnome pattern)
-      # Directory uses gem_name (with hyphens), file uses module_name (with underscores)
-      lib_dir = File.join('lib', gem_name, current_ruby_dot)
-      FileUtils.mkdir_p(lib_dir)
-
-      # Name the .so with module_name (underscores), matching upstream convention
-      versioned_so = File.join(lib_dir, "#{module_name}.so")
-      FileUtils.cp(so_file, versioned_so)
-      puts "  ✅ Compiled extension copied to lib/#{gem_name}/#{current_ruby_dot}/ as #{module_name}.so"
-
-      # Step 2a: Extract DLL dependencies deterministically
-      puts '  2a. Extracting DLL dependencies deterministically...'
-      detect_and_copy_dll_dependencies(gem_name, versioned_so)
-
-      # Step 3: Build the binary gem (gemspec already modified for binary distribution)
+      # Step 3: Build the binary gem
       puts '  2. Building binary gem...'
       system("gem build #{gem_name}.gemspec") || (puts '❌ Failed to build gem'
                                                   exit 1)
@@ -320,11 +329,14 @@ namespace :build do
       built_gem = gem_files.last
       FileUtils.mv(built_gem, "#{original_dir}/#{PKG_DIR}/")
 
-      # Cleanup compiled .so from ext/ (keep lib_dir with versioned .so)
-      FileUtils.rm(so_file)
-
-      puts "✅ Built: pkg/#{File.basename(built_gem)}"
-      puts "   (Ruby #{current_ruby_dot} .so included for multi-Ruby support)"
+      if so_file
+        FileUtils.rm(so_file)
+        puts "✅ Built: pkg/#{File.basename(built_gem)}"
+        puts "   (Ruby #{current_ruby_dot} .so included for multi-Ruby support)"
+      else
+        puts "✅ Built: pkg/#{File.basename(built_gem)}"
+        puts '   (GI-only gem - no compiled extensions)'
+      end
     ensure
       Dir.chdir(original_dir)
     end
@@ -350,39 +362,44 @@ namespace :build do
     begin
       Dir.chdir(gem_dir)
 
-      # Step 1: Verify precompiled .so files and vendor DLLs exist
-      puts '  1. Verifying precompiled extensions exist...'
-      lib_dir = File.join('lib', gem_name)
+      if has_native_extension?(gem_name)
+        # Step 1: Verify precompiled .so files and vendor DLLs exist
+        puts '  1. Verifying precompiled extensions exist...'
+        lib_dir = File.join('lib', gem_name)
 
-      # Note: Gem names may have hyphens but .so files use underscores
-      # e.g., "gobject-introspection" → "gobject_introspection.so"
-      module_name = gem_name.tr('-', '_')
-      so_files = Dir.glob("#{lib_dir}/*/#{module_name}.so")
+        # Note: Gem names may have hyphens but .so files use underscores
+        module_name = gem_name.tr('-', '_')
+        so_files = Dir.glob("#{lib_dir}/*/#{module_name}.so")
 
-      if so_files.empty?
-        puts "❌ No precompiled .so files found in #{lib_dir}/"
-        puts "   Expected structure: #{lib_dir}/{major}.{minor}/#{module_name}.so"
-        puts "   (e.g., #{lib_dir}/3.3/#{module_name}.so, #{lib_dir}/3.4/#{module_name}.so)"
-        exit 1
-      end
+        if so_files.empty?
+          puts "❌ No precompiled .so files found in #{lib_dir}/"
+          puts "   Expected structure: #{lib_dir}/{major}.{minor}/#{module_name}.so"
+          puts "   (e.g., #{lib_dir}/3.3/#{module_name}.so, #{lib_dir}/3.4/#{module_name}.so)"
+          exit 1
+        end
 
-      puts "  ✅ Found #{so_files.count} precompiled extension(s):"
-      so_files.each { |f| puts "     - #{f}" }
+        puts "  ✅ Found #{so_files.count} precompiled extension(s):"
+        so_files.each { |f| puts "     - #{f}" }
 
-      # Check for vendor DLLs
-      vendor_dir = File.join('vendor', 'local', 'bin')
-      if Dir.exist?(vendor_dir)
-        dll_files = Dir.glob("#{vendor_dir}/*.dll")
-        if dll_files.any?
-          puts "  ✅ Found #{dll_files.count} vendor DLL(s)"
+        # Check for vendor DLLs
+        vendor_dir = File.join('vendor', 'local', 'bin')
+        if Dir.exist?(vendor_dir)
+          dll_files = Dir.glob("#{vendor_dir}/*.dll")
+          if dll_files.any?
+            puts "  ✅ Found #{dll_files.count} vendor DLL(s)"
+          else
+            puts '  ⚠️  WARNING: Vendor directory exists but contains no .dll files!'
+          end
         else
-          puts '  ⚠️  WARNING: Vendor directory exists but contains no .dll files!'
+          puts '  ⚠️  WARNING: No vendor/local/bin directory found - gem may fail at runtime'
         end
       else
-        puts '  ⚠️  WARNING: No vendor/bin directory found - gem may fail at runtime'
+        # GI-only gem - no .so files to verify
+        puts '  1. GObject Introspection only gem - no compiled extensions to verify'
+        so_files = []
       end
 
-      # Step 2: Build the gem (gemspec already modified for binary distribution)
+      # Step 2: Build the gem
       puts '  2. Building consolidated gem...'
       system("gem build #{gem_name}.gemspec") || (puts '❌ Failed to build gem'
                                                   exit 1)
@@ -396,8 +413,13 @@ namespace :build do
       built_gem = gem_files.last
       FileUtils.mv(built_gem, "#{original_dir}/#{PKG_DIR}/")
 
-      puts "✅ Built: pkg/#{File.basename(built_gem)}"
-      puts "   (Multi-Ruby support: #{so_files.count} Ruby versions included)"
+      if so_files.any?
+        puts "✅ Built: pkg/#{File.basename(built_gem)}"
+        puts "   (Multi-Ruby support: #{so_files.count} Ruby versions included)"
+      else
+        puts "✅ Built: pkg/#{File.basename(built_gem)}"
+        puts '   (GI-only gem - no compiled extensions)'
+      end
     ensure
       Dir.chdir(original_dir)
     end
