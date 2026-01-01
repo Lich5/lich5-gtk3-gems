@@ -5,7 +5,7 @@
 Gem::Specification.new do |s|
   s.name = "cairo".freeze
   s.version = "1.18.4".freeze
-  s.platform    = Gem::Platform.new('x64-mingw32')
+  s.platform    = Gem::Platform.new('x64-mingw-ucrt')
 
   s.required_rubygems_version = Gem::Requirement.new(">= 0".freeze) if s.respond_to? :required_rubygems_version=
   s.metadata = { "bug_tracker_uri" => "https://github.com/rcairo/rcairo/issues", "changelog_uri" => "https://github.com/rcairo/rcairo/blob/master/NEWS", "documentation_uri" => "https://rcairo.github.io/doc/", "mailing_list_uri" => "https://cairographics.org/cgi-bin/mailman/listinfo/cairo", "msys2_mingw_dependencies" => "cairo", "source_code_uri" => "https://github.com/rcairo/rcairo" } if s.respond_to? :metadata=
