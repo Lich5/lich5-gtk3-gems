@@ -53,6 +53,14 @@ base_dir = Pathname.new(__FILE__).dirname.dirname.expand_path
 vendor_dir = base_dir + "vendor" + "local"
 GObjectIntrospection.prepend_dll_path(vendor_dir + "bin")
 
+# BINARY GEM MODIFICATION: Set FONTCONFIG_PATH for bundled fontconfig config
+# Fontconfig needs to find fonts.conf to work properly. Without this:
+# "Fontconfig error: Cannot load default config file: No such file: (null)"
+fontconfig_path = vendor_dir + "etc" + "fonts"
+if fontconfig_path.exist? && !ENV["FONTCONFIG_PATH"]
+  ENV["FONTCONFIG_PATH"] = fontconfig_path.to_s
+end
+
 # BINARY GEM MODIFICATION: Load version-specific precompiled .so
 # See docs/adr/0001-binary-gem-upstream-modifications.md
 # Binary gems support multiple Ruby versions (3.3, 3.4) by including separate precompiled
