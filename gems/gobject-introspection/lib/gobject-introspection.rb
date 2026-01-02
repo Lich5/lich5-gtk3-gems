@@ -44,15 +44,19 @@ module GObjectIntrospection
   end
 end
 
-# BINARY GEM MODIFICATION: Add vendor/local/bin to DLL search path before loading .so
+# BINARY GEM MODIFICATION: Add vendor paths for DLLs and typelibs before loading .so
 # See docs/adr/0001-binary-gem-upstream-modifications.md
-# For Windows binary gems, bundled DLLs are in vendor/local/bin/ at gem root level.
-# We must add this to the DLL search path BEFORE loading gobject_introspection.so, otherwise
-# Windows won't find the required DLLs (libgirepository) and loading will fail with LoadError 126.
+# For Windows binary gems:
+# - Bundled DLLs are in vendor/local/bin/
+# - Bundled typelibs are in vendor/local/lib/girepository-1.0/
+# We must add these paths BEFORE loading gobject_introspection.so, otherwise:
+# - Windows won't find required DLLs (libgirepository) → LoadError 126
+# - GI won't find typelibs (Atk-1.0.typelib, etc.) → TypelibNotFound
 # This matches the official ruby-gnome binary gem strategy.
 base_dir = Pathname.new(__FILE__).dirname.dirname.expand_path
 vendor_dir = base_dir + "vendor" + "local"
 GObjectIntrospection.prepend_dll_path(vendor_dir + "bin")
+GObjectIntrospection.prepend_typelib_path(vendor_dir + "lib" + "girepository-1.0")
 
 # BINARY GEM MODIFICATION: Load version-specific precompiled .so
 # See docs/adr/0001-binary-gem-upstream-modifications.md

@@ -228,6 +228,47 @@ jobs:
         env:
           BINARY_GEM: 'true'
 
+      # Bundle typelib files for GObject Introspection runtime
+      # GI-based gems (atk, gdk_pixbuf2, gdk3, gtk3) need these at runtime to generate bindings.
+      # Without typelibs, require 'gtk3' fails with TypelibNotFound error.
+      # We bundle ALL needed typelibs here since gobject-introspection registers the search path.
+      - name: Bundle typelib files
+        shell: msys2 {0}
+        run: |
+          echo "Bundling typelib files from MSYS2..."
+          mkdir -p gems/gobject-introspection/vendor/local/lib/girepository-1.0
+          # Copy all GTK3 suite typelibs - GI needs these at runtime
+          TYPELIB_SRC="/mingw64/lib/girepository-1.0"
+          TYPELIB_DST="gems/gobject-introspection/vendor/local/lib/girepository-1.0"
+          for typelib in \
+            GLib-2.0.typelib \
+            GObject-2.0.typelib \
+            Gio-2.0.typelib \
+            GModule-2.0.typelib \
+            GIRepository-2.0.typelib \
+            Atk-1.0.typelib \
+            GdkPixbuf-2.0.typelib \
+            Pango-1.0.typelib \
+            PangoCairo-1.0.typelib \
+            PangoFT2-1.0.typelib \
+            cairo-1.0.typelib \
+            freetype2-2.0.typelib \
+            HarfBuzz-0.0.typelib \
+            Gdk-3.0.typelib \
+            Gtk-3.0.typelib \
+            xlib-2.0.typelib \
+            win32-1.0.typelib
+          do
+            if [ -f "$TYPELIB_SRC/$typelib" ]; then
+              cp "$TYPELIB_SRC/$typelib" "$TYPELIB_DST/"
+              echo "  ✓ $typelib"
+            else
+              echo "  ⚠ $typelib not found (may not be needed)"
+            fi
+          done
+          echo "Bundled $(ls -1 "$TYPELIB_DST" | wc -l) typelib files"
+          ls -la "$TYPELIB_DST/"
+
       - name: Upload gobject-introspection extensions
         uses: actions/upload-artifact@v4
         with:
