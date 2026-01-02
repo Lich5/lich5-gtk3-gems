@@ -347,7 +347,12 @@ jobs:
             libthai-0.dll \
             libdatrie-1.dll \
             librsvg-2-2.dll \
-            libxml2-2.dll
+            libxml2-2.dll \
+            libwebp-7.dll \
+            libsharpyuv-0.dll \
+            libdeflate.dll \
+            libjbig-0.dll \
+            libLerc.dll
           do
             if [ -f "$DLL_SRC/$dll" ]; then
               cp "$DLL_SRC/$dll" "$DLL_DST/"

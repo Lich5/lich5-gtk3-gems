@@ -281,14 +281,25 @@ This is standard Ruby practice but wasn't consistently applied across all script
 - Removed unnecessary alias creation code from Fix #34
 - User confirmed: `C:\Ruby4Lich5\3.4.5\msys64\ucrt64\bin\libgdk_pixbuf-2.0-0.dll`
 
+### Fix #36: Missing libtiff/libwebp Dependencies
+- libtiff-6.dll has transitive dependencies not in original bundle
+- Testing on Ruby 4.0 (no MSYS2) revealed missing DLLs
+- Added 5 DLLs to gobject-introspection bundle:
+  - libwebp-7.dll (WebP image format)
+  - libsharpyuv-0.dll (WebP dependency)
+  - libdeflate.dll (fast compression)
+  - libjbig-0.dll (JBIG image compression)
+  - libLerc.dll (Limited Error Raster Compression)
+
 ### Current Status
 
 | Component | Status | Notes |
 |-----------|--------|-------|
 | glib2 foundation DLLs | ✓ | 20 DLLs bundled |
 | gobject-introspection typelibs | ✓ | 18 typelibs bundled |
-| gobject-introspection DLLs | ✓ | 24 DLLs bundled |
+| gobject-introspection DLLs | ✓ | 29 DLLs bundled (+5 in Fix #36) |
 | Loader syntax (gio2, gtk3, pango) | ✓ | Clean require_extension |
 | gdk_pixbuf DLL naming | ✓ | Uses underscore (Fix #35) |
+| libtiff dependencies | ✓ | Added in Fix #36 |
 
-### Branch: `claude/fix35-correct-pixbuf-dll-xRcFG`
+### Branch: `claude/fix36-libtiff-deps-xRcFG`
