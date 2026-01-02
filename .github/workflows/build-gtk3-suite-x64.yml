@@ -81,6 +81,47 @@ jobs:
             exit 1
           fi
 
+      # Bundle foundation DLLs from MSYS2 - glib2 is the base gem that provides core GTK3 runtime
+      # All other gems depend on these DLLs being available via glib2's vendor/local/bin
+      - name: Bundle foundation DLLs
+        shell: msys2 {0}
+        run: |
+          echo "Bundling foundation DLLs from MSYS2..."
+          mkdir -p gems/glib2/vendor/local/bin
+          DLL_SRC="/mingw64/bin"
+          DLL_DST="gems/glib2/vendor/local/bin"
+          # Core GLib/GObject/GIO DLLs
+          for dll in \
+            libglib-2.0-0.dll \
+            libgobject-2.0-0.dll \
+            libgio-2.0-0.dll \
+            libgmodule-2.0-0.dll \
+            libgthread-2.0-0.dll \
+            libgirepository-1.0-1.dll \
+            libffi-8.dll \
+            libintl-8.dll \
+            libiconv-2.dll \
+            libpcre2-8-0.dll \
+            libwinpthread-1.dll \
+            zlib1.dll \
+            libgcc_s_seh-1.dll \
+            libstdc++-6.dll \
+            libbz2-1.dll \
+            liblzma-5.dll \
+            libzstd.dll \
+            libexpat-1.dll \
+            libbrotlidec.dll \
+            libbrotlicommon.dll
+          do
+            if [ -f "$DLL_SRC/$dll" ]; then
+              cp "$DLL_SRC/$dll" "$DLL_DST/"
+              echo "  ✓ $dll"
+            else
+              echo "  ⚠ $dll not found"
+            fi
+          done
+          echo "Bundled $(ls -1 "$DLL_DST"/*.dll 2>/dev/null | wc -l) foundation DLLs"
+
       - name: Upload glib2 extensions
         uses: actions/upload-artifact@v4
         with:
@@ -268,6 +309,52 @@ jobs:
           done
           echo "Bundled $(ls -1 "$TYPELIB_DST" | wc -l) typelib files"
           ls -la "$TYPELIB_DST/"
+
+      # Bundle DLLs that typelibs reference when GI loads namespaces
+      # Each typelib references a shared library - GI calls dlopen() on these at runtime.
+      # Without these DLLs, require 'gtk3' fails with "Failed to load shared library" error.
+      - name: Bundle GI runtime DLLs
+        shell: msys2 {0}
+        run: |
+          echo "Bundling GI runtime DLLs from MSYS2..."
+          mkdir -p gems/gobject-introspection/vendor/local/bin
+          DLL_SRC="/mingw64/bin"
+          DLL_DST="gems/gobject-introspection/vendor/local/bin"
+          # DLLs corresponding to bundled typelibs (typelib → shared library mapping)
+          for dll in \
+            libatk-1.0-0.dll \
+            libgdk_pixbuf-2.0-0.dll \
+            libpango-1.0-0.dll \
+            libpangocairo-1.0-0.dll \
+            libpangoft2-1.0-0.dll \
+            libpangowin32-1.0-0.dll \
+            libgdk-3-0.dll \
+            libgtk-3-0.dll \
+            libcairo-2.dll \
+            libcairo-gobject-2.dll \
+            libharfbuzz-0.dll \
+            libharfbuzz-gobject-0.dll \
+            libfreetype-6.dll \
+            libfontconfig-1.dll \
+            libpixman-1-0.dll \
+            libpng16-16.dll \
+            libjpeg-8.dll \
+            libtiff-6.dll \
+            libepoxy-0.dll \
+            libfribidi-0.dll \
+            libthai-0.dll \
+            libdatrie-1.dll \
+            librsvg-2-2.dll \
+            libxml2-2.dll
+          do
+            if [ -f "$DLL_SRC/$dll" ]; then
+              cp "$DLL_SRC/$dll" "$DLL_DST/"
+              echo "  ✓ $dll"
+            else
+              echo "  ⚠ $dll not found (may not be needed)"
+            fi
+          done
+          echo "Bundled $(ls -1 "$DLL_DST"/*.dll 2>/dev/null | wc -l) DLL files"
 
       - name: Upload gobject-introspection extensions
         uses: actions/upload-artifact@v4
