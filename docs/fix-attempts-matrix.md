@@ -243,3 +243,52 @@ This is standard Ruby practice but wasn't consistently applied across all script
 - **Branch:** `claude/fix19-so-naming-paths-xRcFG`
 - **State:** Ready for workflow trigger and testing
 - **Confidence:** High - all three naming mismatch locations identified and fixed
+
+---
+
+## Fixes #28-35: DLL/Typelib Bundling and Runtime Fixes
+
+### Fix #28: Typelib Bundling
+- Added typelib files to gobject-introspection gem
+- Registered typelib search path in gobject-introspection.rb
+
+### Fix #29: Typelib Load Order
+- Moved typelib path registration AFTER loading .so file
+- Repository class is defined in native extension - must be loaded first
+
+### Fix #30: GI Runtime DLLs + Glib2 Foundation DLLs
+- glib2: Bundles ~20 foundation DLLs (libglib, libgobject, etc.)
+- gobject-introspection: Bundles ~24 GI runtime DLLs (libatk, libgtk, etc.)
+
+### Fix #31: Pango Syntax Error + PangoFc Typelib
+- Fixed broken DLL path code in pango/loader.rb (stray `end` with duplicate code)
+- Added PangoFc-1.0.typelib to bundle list
+
+### Fix #32: Fontconfig Typelib
+- Added fontconfig-2.0.typelib to bundle list
+
+### Fix #33: Loader Syntax Errors (gio2, gtk3)
+- Fixed same broken DLL path pattern in gio2/loader.rb and gtk3/loader.rb
+- Clean require_extension method now used across all gems
+
+### Fix #34: gdk-pixbuf DLL Naming (INCORRECT)
+- **WRONG:** Changed `libgdk_pixbuf-2.0-0.dll` (underscore) to `libgdk-pixbuf-2.0-0.dll` (hyphen)
+- Based on incorrect assumption about MSYS2 naming
+- Superseded by Fix #35
+
+### Fix #35: Correct gdk_pixbuf DLL Name
+- **CORRECT:** Restored `libgdk_pixbuf-2.0-0.dll` (underscore) matching MSYS2 naming
+- Removed unnecessary alias creation code from Fix #34
+- User confirmed: `C:\Ruby4Lich5\3.4.5\msys64\ucrt64\bin\libgdk_pixbuf-2.0-0.dll`
+
+### Current Status
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| glib2 foundation DLLs | ✓ | 20 DLLs bundled |
+| gobject-introspection typelibs | ✓ | 18 typelibs bundled |
+| gobject-introspection DLLs | ✓ | 24 DLLs bundled |
+| Loader syntax (gio2, gtk3, pango) | ✓ | Clean require_extension |
+| gdk_pixbuf DLL naming | ✓ | Uses underscore (Fix #35) |
+
+### Branch: `claude/fix35-correct-pixbuf-dll-xRcFG`
