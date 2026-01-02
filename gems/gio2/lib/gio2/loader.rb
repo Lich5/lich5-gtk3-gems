@@ -61,9 +61,6 @@ module Gio
       base_dir = Pathname.new(__FILE__).dirname.dirname.dirname.expand_path
       vendor_dir = base_dir + "vendor" + "local"
       GLib.prepend_dll_path(vendor_dir + "bin")
-        vendor_bin = File.expand_path(File.join(__dir__, '..', 'gio2', 'vendor', 'bin'))
-        GLib.prepend_dll_path(vendor_bin) if Dir.exist?(vendor_bin)
-      end
 
       # BINARY GEM MODIFICATION: Load version-specific precompiled .so
       # See docs/adr/0001-binary-gem-upstream-modifications.md
