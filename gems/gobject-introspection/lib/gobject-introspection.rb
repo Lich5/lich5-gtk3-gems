@@ -44,19 +44,14 @@ module GObjectIntrospection
   end
 end
 
-# BINARY GEM MODIFICATION: Add vendor paths for DLLs and typelibs before loading .so
+# BINARY GEM MODIFICATION: Add vendor DLL path before loading .so
 # See docs/adr/0001-binary-gem-upstream-modifications.md
-# For Windows binary gems:
-# - Bundled DLLs are in vendor/local/bin/
-# - Bundled typelibs are in vendor/local/lib/girepository-1.0/
-# We must add these paths BEFORE loading gobject_introspection.so, otherwise:
-# - Windows won't find required DLLs (libgirepository) → LoadError 126
-# - GI won't find typelibs (Atk-1.0.typelib, etc.) → TypelibNotFound
-# This matches the official ruby-gnome binary gem strategy.
+# For Windows binary gems, bundled DLLs are in vendor/local/bin/
+# We must add this to DLL search path BEFORE loading gobject_introspection.so,
+# otherwise Windows won't find required DLLs (libgirepository) → LoadError 126
 base_dir = Pathname.new(__FILE__).dirname.dirname.expand_path
 vendor_dir = base_dir + "vendor" + "local"
 GObjectIntrospection.prepend_dll_path(vendor_dir + "bin")
-GObjectIntrospection.prepend_typelib_path(vendor_dir + "lib" + "girepository-1.0")
 
 # BINARY GEM MODIFICATION: Load version-specific precompiled .so
 # See docs/adr/0001-binary-gem-upstream-modifications.md
@@ -64,6 +59,14 @@ GObjectIntrospection.prepend_typelib_path(vendor_dir + "lib" + "girepository-1.0
 # .so files in version-specific directories: lib/gobject-introspection/3.3/gobject_introspection.so, lib/gobject-introspection/3.4/gobject_introspection.so
 major, minor, _ = RUBY_VERSION.split(/\./)
 require "gobject-introspection/#{major}.#{minor}/gobject_introspection.so"
+
+# BINARY GEM MODIFICATION: Add vendor typelib path AFTER loading .so
+# See docs/adr/0001-binary-gem-upstream-modifications.md
+# Typelibs are in vendor/local/lib/girepository-1.0/
+# This must come AFTER loading .so because prepend_typelib_path uses Repository class
+# which is defined in the native extension. Without this, GI-based gems (atk, gdk3, gtk3)
+# fail with TypelibNotFound error.
+GObjectIntrospection.prepend_typelib_path(vendor_dir + "lib" + "girepository-1.0")
 
 module GObjectIntrospection
   LOG_DOMAIN = "GObjectIntrospection"
