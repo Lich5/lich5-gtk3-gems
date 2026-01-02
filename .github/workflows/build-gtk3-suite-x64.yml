@@ -363,6 +363,25 @@ jobs:
           done
           echo "Bundled $(ls -1 "$DLL_DST"/*.dll 2>/dev/null | wc -l) DLL files"
 
+      # Bundle fontconfig configuration files
+      # Fontconfig needs its config files to find/render fonts properly.
+      # Without these, you get: "Fontconfig error: Cannot load default config file"
+      - name: Bundle fontconfig config
+        shell: msys2 {0}
+        run: |
+          echo "Bundling fontconfig configuration from MSYS2..."
+          FC_SRC="/mingw64/etc/fonts"
+          FC_DST="gems/gobject-introspection/vendor/local/etc/fonts"
+          mkdir -p "$FC_DST/conf.d"
+          if [ -f "$FC_SRC/fonts.conf" ]; then
+            cp "$FC_SRC/fonts.conf" "$FC_DST/"
+            echo "  ✓ fonts.conf"
+          fi
+          if [ -d "$FC_SRC/conf.d" ]; then
+            cp "$FC_SRC/conf.d"/*.conf "$FC_DST/conf.d/" 2>/dev/null || true
+            echo "  ✓ conf.d/ ($(ls -1 "$FC_DST/conf.d"/*.conf 2>/dev/null | wc -l) files)"
+          fi
+
       - name: Upload gobject-introspection extensions
         uses: actions/upload-artifact@v4
         with:

@@ -112,24 +112,102 @@ All modifications will:
 
 **Changes:**
 
-1. **Add vendor typelib path setup (before loading .so):**
+1. **Add vendor DLL path setup (before loading .so):**
    ```ruby
    base_dir = Pathname.new(__FILE__).dirname.dirname.expand_path
    vendor_dir = base_dir + "vendor" + "local"
    GObjectIntrospection.prepend_dll_path(vendor_dir + "bin")
+   ```
+
+2. **Set FONTCONFIG_PATH for bundled fontconfig config:**
+   ```ruby
+   fontconfig_path = vendor_dir + "etc" + "fonts"
+   if fontconfig_path.exist? && !ENV["FONTCONFIG_PATH"]
+     ENV["FONTCONFIG_PATH"] = fontconfig_path.to_s
+   end
+   ```
+   - Fontconfig needs fonts.conf to find/render fonts
+   - Without this: "Fontconfig error: Cannot load default config file"
+
+3. **Add vendor typelib path setup (AFTER loading .so):**
+   ```ruby
    GObjectIntrospection.prepend_typelib_path(vendor_dir + "lib" + "girepository-1.0")
    ```
+   - **CRITICAL:** Must come AFTER loading .so because Repository class is defined in native extension
    - GI-based gems (atk, gdk_pixbuf2, gdk3, gtk3) need typelib files at runtime
    - Typelibs are binary API descriptions that GI reads to generate Ruby bindings
    - Without this, `require 'gtk3'` fails with `TypelibNotFound: Atk` error
-   - Uses existing `prepend_typelib_path` method from upstream
 
-**Bundled Typelib Files (in gobject-introspection vendor):**
-- GLib-2.0.typelib, GObject-2.0.typelib, Gio-2.0.typelib
-- Atk-1.0.typelib, GdkPixbuf-2.0.typelib
-- Pango-1.0.typelib, PangoCairo-1.0.typelib, cairo-1.0.typelib
-- Gdk-3.0.typelib, Gtk-3.0.typelib
-- Supporting typelibs: HarfBuzz, freetype2, etc.
+**Bundled Files in gobject-introspection/vendor/local/:**
+
+*Typelibs (lib/girepository-1.0/):*
+- GLib-2.0.typelib, GObject-2.0.typelib, Gio-2.0.typelib, GModule-2.0.typelib
+- GIRepository-2.0.typelib, Atk-1.0.typelib, GdkPixbuf-2.0.typelib
+- Pango-1.0.typelib, PangoCairo-1.0.typelib, PangoFT2-1.0.typelib, PangoFc-1.0.typelib
+- cairo-1.0.typelib, freetype2-2.0.typelib, fontconfig-2.0.typelib
+- HarfBuzz-0.0.typelib, Gdk-3.0.typelib, Gtk-3.0.typelib
+- xlib-2.0.typelib, win32-1.0.typelib
+
+*GI Runtime DLLs (bin/):*
+- libatk-1.0-0.dll, libgdk_pixbuf-2.0-0.dll, libgdk-3-0.dll, libgtk-3-0.dll
+- libpango-1.0-0.dll, libpangocairo-1.0-0.dll, libpangoft2-1.0-0.dll, libpangowin32-1.0-0.dll
+- libcairo-2.dll, libcairo-gobject-2.dll, libharfbuzz-0.dll, libharfbuzz-gobject-0.dll
+- libfreetype-6.dll, libfontconfig-1.dll, libpixman-1-0.dll, libpng16-16.dll
+- libjpeg-8.dll, libtiff-6.dll, libepoxy-0.dll, libfribidi-0.dll
+- libthai-0.dll, libdatrie-1.dll, librsvg-2-2.dll, libxml2-2.dll
+- libwebp-7.dll, libsharpyuv-0.dll, libdeflate.dll, libjbig-0.dll, libLerc.dll
+
+*Fontconfig Config (etc/fonts/):*
+- fonts.conf
+- conf.d/*.conf
+
+### Modification 4: gems/gio2/lib/gio2/loader.rb
+
+**Changes:**
+
+1. **Add vendor DLL path in require_extension:**
+   ```ruby
+   def require_extension
+     base_dir = Pathname.new(__FILE__).dirname.dirname.dirname.expand_path
+     vendor_dir = base_dir + "vendor" + "local"
+     GLib.prepend_dll_path(vendor_dir + "bin")
+
+     major, minor, _ = RUBY_VERSION.split(/\./)
+     require "gio2/#{major}.#{minor}/gio2.so"
+   end
+   ```
+
+### Modification 5: gems/pango/lib/pango/loader.rb
+
+**Changes:**
+
+1. **Add vendor DLL path in require_extension:**
+   ```ruby
+   def require_extension
+     base_dir = Pathname.new(__FILE__).dirname.dirname.dirname.expand_path
+     vendor_dir = base_dir + "vendor" + "local"
+     GLib.prepend_dll_path(vendor_dir + "bin")
+
+     major, minor, _ = RUBY_VERSION.split(/\./)
+     require "pango/#{major}.#{minor}/pango.so"
+   end
+   ```
+
+### Modification 6: gems/gtk3/lib/gtk3/loader.rb
+
+**Changes:**
+
+1. **Add vendor DLL path in require_extension:**
+   ```ruby
+   def require_extension
+     base_dir = Pathname.new(__FILE__).dirname.dirname.dirname.expand_path
+     vendor_dir = base_dir + "vendor" + "local"
+     GLib.prepend_dll_path(vendor_dir + "bin")
+
+     major, minor, _ = RUBY_VERSION.split(/\./)
+     require "gtk3/#{major}.#{minor}/gtk3.so"
+   end
+   ```
 
 ---
 

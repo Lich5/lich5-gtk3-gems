@@ -291,6 +291,14 @@ This is standard Ruby practice but wasn't consistently applied across all script
   - libjbig-0.dll (JBIG image compression)
   - libLerc.dll (Limited Error Raster Compression)
 
+### Fix #37: Fontconfig Configuration Files
+- Fontconfig shows error: "Cannot load default config file: No such file: (null)"
+- Bundle fontconfig config files from MSYS2:
+  - /mingw64/etc/fonts/fonts.conf
+  - /mingw64/etc/fonts/conf.d/*.conf
+- Set FONTCONFIG_PATH environment variable in gobject-introspection.rb
+- Updated ADR-0001 with comprehensive binary gem modification documentation
+
 ### Current Status
 
 | Component | Status | Notes |
@@ -301,5 +309,6 @@ This is standard Ruby practice but wasn't consistently applied across all script
 | Loader syntax (gio2, gtk3, pango) | ✓ | Clean require_extension |
 | gdk_pixbuf DLL naming | ✓ | Uses underscore (Fix #35) |
 | libtiff dependencies | ✓ | Added in Fix #36 |
+| fontconfig config | ✓ | Added in Fix #37 |
 
-### Branch: `claude/fix36-libtiff-deps-xRcFG`
+### Branch: `claude/fix37-fontconfig-config-xRcFG`
