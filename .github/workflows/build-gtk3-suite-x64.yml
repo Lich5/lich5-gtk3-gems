@@ -325,7 +325,7 @@ jobs:
           # DLLs corresponding to bundled typelibs (typelib → shared library mapping)
           for dll in \
             libatk-1.0-0.dll \
-            libgdk-pixbuf-2.0-0.dll \
+            libgdk_pixbuf-2.0-0.dll \
             libpango-1.0-0.dll \
             libpangocairo-1.0-0.dll \
             libpangoft2-1.0-0.dll \
@@ -356,12 +356,6 @@ jobs:
               echo "  ⚠ $dll not found (may not be needed)"
             fi
           done
-          # Handle naming discrepancy: typelib references libgdk_pixbuf (underscore)
-          # but MSYS2 has libgdk-pixbuf (hyphen). Create a copy with the expected name.
-          if [ -f "$DLL_DST/libgdk-pixbuf-2.0-0.dll" ]; then
-            cp "$DLL_DST/libgdk-pixbuf-2.0-0.dll" "$DLL_DST/libgdk_pixbuf-2.0-0.dll"
-            echo "  ✓ Created libgdk_pixbuf-2.0-0.dll alias"
-          fi
           echo "Bundled $(ls -1 "$DLL_DST"/*.dll 2>/dev/null | wc -l) DLL files"
 
       - name: Upload gobject-introspection extensions
