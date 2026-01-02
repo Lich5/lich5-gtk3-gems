@@ -292,6 +292,7 @@ jobs:
             Pango-1.0.typelib \
             PangoCairo-1.0.typelib \
             PangoFT2-1.0.typelib \
+            PangoFc-1.0.typelib \
             cairo-1.0.typelib \
             freetype2-2.0.typelib \
             HarfBuzz-0.0.typelib \
