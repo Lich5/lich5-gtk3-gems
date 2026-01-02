@@ -1196,6 +1196,8 @@ jobs:
           name: gdk_pixbuf2-extensions-x64-${{ matrix.ruby }}
           path: gems/gdk_pixbuf2
 
+      # Copy .so files for gems with native extensions only
+      # GI-only gems (gdk_pixbuf2, atk, gdk3) don't have .so files
       - name: Copy .so files to expected locations
         shell: msys2 {0}
         run: |
@@ -1214,8 +1216,6 @@ jobs:
           cp gems/cairo-gobject/lib/cairo-gobject/*/cairo_gobject.so gems/cairo-gobject/ext/cairo-gobject/
           mkdir -p gems/pango/ext/pango
           cp gems/pango/lib/pango/*/pango.so gems/pango/ext/pango/
-          mkdir -p gems/gdk_pixbuf2/ext/gdk_pixbuf2
-          cp gems/gdk_pixbuf2/lib/gdk_pixbuf2/*/gdk_pixbuf2.so gems/gdk_pixbuf2/ext/gdk_pixbuf2/
 
       - name: Install dependencies
         shell: msys2 {0}
@@ -1392,6 +1392,8 @@ jobs:
           name: gdk3-extensions-x64-${{ matrix.ruby }}
           path: gems/gdk3
 
+      # Copy .so files for gems with native extensions only
+      # GI-only gems (gdk_pixbuf2, atk, gdk3, gtk3) don't have .so files
       - name: Copy .so files to expected locations
         shell: msys2 {0}
         run: |
@@ -1410,12 +1412,6 @@ jobs:
           cp gems/cairo-gobject/lib/cairo-gobject/*/cairo_gobject.so gems/cairo-gobject/ext/cairo-gobject/
           mkdir -p gems/pango/ext/pango
           cp gems/pango/lib/pango/*/pango.so gems/pango/ext/pango/
-          mkdir -p gems/gdk_pixbuf2/ext/gdk_pixbuf2
-          cp gems/gdk_pixbuf2/lib/gdk_pixbuf2/*/gdk_pixbuf2.so gems/gdk_pixbuf2/ext/gdk_pixbuf2/
-          mkdir -p gems/atk/ext/atk
-          cp gems/atk/lib/atk/*/atk.so gems/atk/ext/atk/
-          mkdir -p gems/gdk3/ext/gdk3
-          cp gems/gdk3/lib/gdk3/*/gdk3.so gems/gdk3/ext/gdk3/
 
       # Create rcairo directory for check_cairo function in mkmf-gnome.rb
       # The check_cairo helper looks for cairo at top_dir/../rcairo/ (sibling dir)
