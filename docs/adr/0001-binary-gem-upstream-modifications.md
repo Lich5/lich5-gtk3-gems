@@ -108,6 +108,29 @@ All modifications will:
 
 **All other upstream code (355 lines) preserved intact.**
 
+### Modification 3: gems/gobject-introspection/lib/gobject-introspection.rb
+
+**Changes:**
+
+1. **Add vendor typelib path setup (before loading .so):**
+   ```ruby
+   base_dir = Pathname.new(__FILE__).dirname.dirname.expand_path
+   vendor_dir = base_dir + "vendor" + "local"
+   GObjectIntrospection.prepend_dll_path(vendor_dir + "bin")
+   GObjectIntrospection.prepend_typelib_path(vendor_dir + "lib" + "girepository-1.0")
+   ```
+   - GI-based gems (atk, gdk_pixbuf2, gdk3, gtk3) need typelib files at runtime
+   - Typelibs are binary API descriptions that GI reads to generate Ruby bindings
+   - Without this, `require 'gtk3'` fails with `TypelibNotFound: Atk` error
+   - Uses existing `prepend_typelib_path` method from upstream
+
+**Bundled Typelib Files (in gobject-introspection vendor):**
+- GLib-2.0.typelib, GObject-2.0.typelib, Gio-2.0.typelib
+- Atk-1.0.typelib, GdkPixbuf-2.0.typelib
+- Pango-1.0.typelib, PangoCairo-1.0.typelib, cairo-1.0.typelib
+- Gdk-3.0.typelib, Gtk-3.0.typelib
+- Supporting typelibs: HarfBuzz, freetype2, etc.
+
 ---
 
 ## Options Considered
