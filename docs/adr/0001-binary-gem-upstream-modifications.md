@@ -161,6 +161,25 @@ All modifications will:
 - fonts.conf
 - conf.d/*.conf
 
+*RubyGems Plugin (lib/rubygems_plugin.rb):*
+
+RubyGems loads plugin files early, before any gem code runs. This allows setting
+FONTCONFIG_FILE before fontconfig DLL initializes.
+
+```ruby
+if Gem.win_platform? && !ENV["FONTCONFIG_FILE"]
+  gi_spec = Gem::Specification.find_by_name("gobject-introspection") rescue nil
+  if gi_spec
+    fontconfig_file = File.join(gi_spec.gem_dir, "vendor", "local", "etc", "fonts", "fonts.conf")
+    ENV["FONTCONFIG_FILE"] = fontconfig_file if File.exist?(fontconfig_file)
+  end
+end
+```
+
+**Why a plugin?** Setting FONTCONFIG_FILE in gobject-introspection.rb is too late -
+fontconfig initializes when libfontconfig-1.dll loads, which happens before Ruby code
+in the gem runs. The rubygems plugin mechanism runs earlier, when the gem is activated.
+
 ### Modification 4: gems/gio2/lib/gio2/loader.rb
 
 **Changes:**

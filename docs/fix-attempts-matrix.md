@@ -299,6 +299,14 @@ This is standard Ruby practice but wasn't consistently applied across all script
 - Set FONTCONFIG_PATH environment variable in gobject-introspection.rb
 - Updated ADR-0001 with comprehensive binary gem modification documentation
 
+### Fix #38: RubyGems Plugin for Early Fontconfig Setup
+- Fix #37's FONTCONFIG_PATH setup was too late - fontconfig initializes when DLL loads
+- Setting env var at shell level before Ruby works, but not practical for gem distribution
+- Solution: Add `lib/rubygems_plugin.rb` to gobject-introspection gem
+- RubyGems loads plugin files early, before gem code runs
+- Plugin sets FONTCONFIG_FILE pointing directly to bundled fonts.conf
+- Confirmed working: `require 'gtk3'` loads cleanly without fontconfig error
+
 ### Current Status
 
 | Component | Status | Notes |
@@ -309,6 +317,6 @@ This is standard Ruby practice but wasn't consistently applied across all script
 | Loader syntax (gio2, gtk3, pango) | ✓ | Clean require_extension |
 | gdk_pixbuf DLL naming | ✓ | Uses underscore (Fix #35) |
 | libtiff dependencies | ✓ | Added in Fix #36 |
-| fontconfig config | ✓ | Added in Fix #37 |
+| fontconfig config | ✓ | Bundled in Fix #37, early setup in Fix #38 |
 
-### Branch: `claude/fix37-fontconfig-config-xRcFG`
+### Branch: `claude/fix38-fontconfig-plugin-xRcFG`
