@@ -307,6 +307,18 @@ This is standard Ruby practice but wasn't consistently applied across all script
 - Plugin sets FONTCONFIG_FILE pointing directly to bundled fonts.conf
 - Confirmed working: `require 'gtk3'` loads cleanly without fontconfig error
 
+### Fix #39: GdkPixbuf Loaders for Theme Asset Loading
+- GTK warning: "Could not load a pixbuf from .../bullet-symbolic.svg"
+- GTK theme assets (SVG icons, PNG images) need gdk-pixbuf loaders
+- Loaders are plugin DLLs in `/mingw64/lib/gdk-pixbuf-2.0/2.10.0/loaders/`
+- A `loaders.cache` file tells gdk-pixbuf which loaders handle which formats
+- Implementation:
+  - Bundle all loader DLLs from MSYS2 to `vendor/local/lib/gdk-pixbuf-2.0/2.10.0/loaders/`
+  - Generate `loaders.cache.in` template with `@@MODULEDIR@@` placeholder
+  - RubyGems plugin generates runtime `loaders.cache` with correct paths
+  - Sets `GDK_PIXBUF_MODULE_FILE` to point to generated cache
+- Same timing issue as fontconfig - must be set before DLL initialization
+
 ### Current Status
 
 | Component | Status | Notes |
@@ -318,5 +330,6 @@ This is standard Ruby practice but wasn't consistently applied across all script
 | gdk_pixbuf DLL naming | ✓ | Uses underscore (Fix #35) |
 | libtiff dependencies | ✓ | Added in Fix #36 |
 | fontconfig config | ✓ | Bundled in Fix #37, early setup in Fix #38 |
+| gdk-pixbuf loaders | ✓ | Bundled in Fix #39, runtime cache generation |
 
-### Branch: `claude/fix38-fontconfig-plugin-xRcFG`
+### Branch: `claude/fix39-pixbuf-loaders-xRcFG`

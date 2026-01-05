@@ -161,24 +161,51 @@ All modifications will:
 - fonts.conf
 - conf.d/*.conf
 
+*GdkPixbuf Loaders (lib/gdk-pixbuf-2.0/2.10.0/loaders/):*
+- All loader DLLs (libpixbufloader-*.dll) for PNG, JPEG, SVG, etc.
+- loaders.cache.in (template with @@MODULEDIR@@ placeholder)
+
 *RubyGems Plugin (lib/rubygems_plugin.rb):*
 
 RubyGems loads plugin files early, before any gem code runs. This allows setting
-FONTCONFIG_FILE before fontconfig DLL initializes.
+environment variables before native DLLs initialize.
 
 ```ruby
-if Gem.win_platform? && !ENV["FONTCONFIG_FILE"]
+if Gem.win_platform?
   gi_spec = Gem::Specification.find_by_name("gobject-introspection") rescue nil
   if gi_spec
-    fontconfig_file = File.join(gi_spec.gem_dir, "vendor", "local", "etc", "fonts", "fonts.conf")
-    ENV["FONTCONFIG_FILE"] = fontconfig_file if File.exist?(fontconfig_file)
+    vendor_dir = File.join(gi_spec.gem_dir, "vendor", "local")
+
+    # Fontconfig setup - set FONTCONFIG_FILE for fonts.conf
+    if !ENV["FONTCONFIG_FILE"]
+      fontconfig_file = File.join(vendor_dir, "etc", "fonts", "fonts.conf")
+      ENV["FONTCONFIG_FILE"] = fontconfig_file if File.exist?(fontconfig_file)
+    end
+
+    # GdkPixbuf loaders setup - generate cache from template and set env var
+    if !ENV["GDK_PIXBUF_MODULE_FILE"]
+      pixbuf_dir = File.join(vendor_dir, "lib", "gdk-pixbuf-2.0", "2.10.0")
+      cache_template = File.join(pixbuf_dir, "loaders.cache.in")
+      cache_file = File.join(pixbuf_dir, "loaders.cache")
+      loaders_dir = File.join(pixbuf_dir, "loaders")
+
+      # Generate cache from template with correct paths
+      if File.exist?(cache_template) && File.directory?(loaders_dir)
+        template = File.read(cache_template)
+        cache_content = template.gsub("@@MODULEDIR@@", loaders_dir.gsub("/", "\\"))
+        File.write(cache_file, cache_content) rescue nil
+        ENV["GDK_PIXBUF_MODULE_FILE"] = cache_file if File.exist?(cache_file)
+      end
+    end
   end
 end
 ```
 
-**Why a plugin?** Setting FONTCONFIG_FILE in gobject-introspection.rb is too late -
-fontconfig initializes when libfontconfig-1.dll loads, which happens before Ruby code
-in the gem runs. The rubygems plugin mechanism runs earlier, when the gem is activated.
+**Why a plugin?** Both fontconfig and gdk-pixbuf initialize when their DLLs load,
+which happens before Ruby code in the gem runs. The rubygems plugin mechanism runs
+earlier, when the gem is activated. Without this:
+- "Fontconfig error: Cannot load default config file: No such file: (null)"
+- "Could not load a pixbuf from .../bullet-symbolic.svg"
 
 ### Modification 4: gems/gio2/lib/gio2/loader.rb
 
@@ -403,5 +430,5 @@ All upstream Ruby helpers, signal handling, Enum/Flags classes, and Log module r
 
 ---
 
-**Last Updated:** 2026-01-01
+**Last Updated:** 2026-01-05
 **Next Review:** 2026-04-01 (quarterly upstream sync check)

@@ -382,6 +382,35 @@ jobs:
             echo "  ✓ conf.d/ ($(ls -1 "$FC_DST/conf.d"/*.conf 2>/dev/null | wc -l) files)"
           fi
 
+      # Bundle gdk-pixbuf loaders for image format support (PNG, JPEG, SVG, etc.)
+      # Without loaders, GTK cannot load theme assets:
+      # "Could not load a pixbuf from .../bullet-symbolic.svg"
+      - name: Bundle gdk-pixbuf loaders
+        shell: msys2 {0}
+        run: |
+          echo "Bundling gdk-pixbuf loaders from MSYS2..."
+          LOADERS_SRC="/mingw64/lib/gdk-pixbuf-2.0/2.10.0/loaders"
+          LOADERS_DST="gems/gobject-introspection/vendor/local/lib/gdk-pixbuf-2.0/2.10.0/loaders"
+          mkdir -p "$LOADERS_DST"
+
+          # Copy all loader DLLs
+          if [ -d "$LOADERS_SRC" ]; then
+            cp "$LOADERS_SRC"/*.dll "$LOADERS_DST/" 2>/dev/null || true
+            echo "  ✓ loaders/ ($(ls -1 "$LOADERS_DST"/*.dll 2>/dev/null | wc -l) DLLs)"
+          fi
+
+          # Generate loaders.cache with placeholder for runtime path substitution
+          # The rubygems_plugin.rb will replace @@MODULEDIR@@ with actual gem path
+          CACHE_DST="gems/gobject-introspection/vendor/local/lib/gdk-pixbuf-2.0/2.10.0"
+          GDK_PIXBUF_MODULEDIR="$LOADERS_DST" gdk-pixbuf-query-loaders > "$CACHE_DST/loaders.cache.in"
+
+          # Replace MSYS2 path with placeholder
+          sed -i "s|$LOADERS_DST|@@MODULEDIR@@|g" "$CACHE_DST/loaders.cache.in"
+          echo "  ✓ loaders.cache.in (template)"
+
+          # Show what we bundled
+          ls -la "$LOADERS_DST/" | head -10
+
       - name: Upload gobject-introspection extensions
         uses: actions/upload-artifact@v4
         with:
