@@ -1,0 +1,523 @@
+name: Build GTK3 Current Lane
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform-lane:
+        description: "Native build lane to exercise."
+        required: false
+        default: "windows-ucrt64"
+        type: choice
+        options:
+          - "windows-ucrt64"
+          - "windows-mingw64"
+      msys-source:
+        description: "Use the current latest MSYS2 base archive or a dated archive."
+        required: false
+        default: "current"
+        type: choice
+        options:
+          - "current"
+          - "dated"
+      snapshot-date:
+        description: "MSYS2 base archive date for msys-source=dated, for example 20250830."
+        required: false
+        default: "20250830"
+      ruby-installer-version:
+        description: "RubyInstaller archive version, for example 4.0.5-1."
+        required: false
+        default: "4.0.5-1"
+      ruby-gnome-version:
+        description: "Ruby-GNOME gem/source version to build against."
+        required: false
+        default: "4.3.6"
+      glib2-gc-repair:
+        description: "Optional glib2 patch for Ruby-defined GObject property retention."
+        required: false
+        default: "cache-ruby-property-setter-values"
+        type: choice
+        options:
+          - "cache-ruby-property-setter-values"
+          - "none"
+
+permissions:
+  contents: read
+
+jobs:
+  patched_glib2_proof:
+    name: Patched glib2 proof (${{ inputs.platform-lane }})
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate inputs and select lane
+        shell: powershell
+        run: |
+          $platformLane = '${{ inputs.platform-lane }}'
+          $msysSource = '${{ inputs.msys-source }}'
+          $snapshotDate = '${{ inputs.snapshot-date }}'
+          $rubyInstallerVersion = '${{ inputs.ruby-installer-version }}'
+          $rubyGnomeVersion = '${{ inputs.ruby-gnome-version }}'
+          $glib2GcRepair = '${{ inputs.glib2-gc-repair }}'
+
+          if ($platformLane -notin @('windows-ucrt64', 'windows-mingw64')) {
+            Write-Error "platform-lane must be 'windows-ucrt64' or 'windows-mingw64'; received '$platformLane'."
+            exit 1
+          }
+          if ($msysSource -notin @('current', 'dated')) {
+            Write-Error "msys-source must be 'current' or 'dated'; received '$msysSource'."
+            exit 1
+          }
+          if ($snapshotDate -notmatch '^\d{8}$') {
+            Write-Error "snapshot-date must be YYYYMMDD, for example 20250830; received '$snapshotDate'."
+            exit 1
+          }
+          if ($rubyInstallerVersion -notmatch '^\d+\.\d+\.\d+-\d+$') {
+            Write-Error "ruby-installer-version must look like N.N.N-N, for example 4.0.5-1; received '$rubyInstallerVersion'."
+            exit 1
+          }
+          if ($rubyGnomeVersion -notmatch '^\d+\.\d+\.\d+$') {
+            Write-Error "ruby-gnome-version must look like N.N.N; received '$rubyGnomeVersion'."
+            exit 1
+          }
+          if ($glib2GcRepair -notin @('cache-ruby-property-setter-values', 'none')) {
+            Write-Error "glib2-gc-repair must be 'cache-ruby-property-setter-values' or 'none'; received '$glib2GcRepair'."
+            exit 1
+          }
+
+          if ($platformLane -eq 'windows-ucrt64') {
+            $msystem = 'UCRT64'
+            $msysPrefix = 'ucrt64'
+            $packageRepo = 'ucrt64'
+            $packagePrefix = 'mingw-w64-ucrt-x86_64'
+            $gemPlatform = 'x64-mingw-ucrt'
+          } else {
+            $msystem = 'MINGW64'
+            $msysPrefix = 'mingw64'
+            $packageRepo = 'mingw64'
+            $packagePrefix = 'mingw-w64-x86_64'
+            $gemPlatform = 'x64-mingw32'
+          }
+
+          "PLATFORM_LANE=$platformLane" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "MSYS2_SOURCE=$msysSource" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "MSYS2_SNAPSHOT_DATE=$snapshotDate" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "RUBY_INSTALLER_VERSION=$rubyInstallerVersion" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "RUBY_GNOME_VERSION=$rubyGnomeVersion" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "GLIB2_GC_REPAIR=$glib2GcRepair" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "MSYSTEM=$msystem" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "MSYS2_PREFIX=$msysPrefix" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "MSYS2_PACKAGE_REPO=$packageRepo" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "MSYS2_PACKAGE_PREFIX=$packagePrefix" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "GEM_PLATFORM=$gemPlatform" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+          Write-Host "Selected lane:"
+          Write-Host "  platform-lane=$platformLane"
+          Write-Host "  MSYSTEM=$msystem"
+          Write-Host "  MSYS2_PREFIX=$msysPrefix"
+          Write-Host "  MSYS2_PACKAGE_REPO=$packageRepo"
+          Write-Host "  MSYS2_PACKAGE_PREFIX=$packagePrefix"
+          Write-Host "  GEM_PLATFORM=$gemPlatform"
+
+      - name: Download and extract MSYS2 base archive
+        shell: powershell
+        run: |
+          $snapshotDate = $env:MSYS2_SNAPSHOT_DATE
+          $msysSource = $env:MSYS2_SOURCE
+          $msysParent = 'C:\Ruby4Lich5'
+          $msys = Join-Path $msysParent 'msys64'
+          $distribUrl = 'https://repo.msys2.org/distrib/x86_64/'
+
+          if ($msysSource -eq 'current') {
+            Write-Host "Resolving newest MSYS2 base archive from $distribUrl"
+            $index = Invoke-WebRequest -Uri $distribUrl -UseBasicParsing
+            $archiveName = @(
+              [regex]::Matches($index.Content, 'msys2-base-x86_64-\d{8}\.tar\.zst') |
+                ForEach-Object { $_.Value } |
+                Sort-Object -Unique -Descending
+            ) | Select-Object -First 1
+            if (-not $archiveName) {
+              Write-Error "MSYS2 current archive resolution failed: no dated msys2-base-x86_64-YYYYMMDD.tar.zst entries found at $distribUrl."
+              exit 1
+            }
+          } else {
+            $archiveName = "msys2-base-x86_64-$snapshotDate.tar.zst"
+          }
+
+          $archive = Join-Path $env:RUNNER_TEMP $archiveName
+          $url = "$distribUrl$archiveName"
+
+          if (Test-Path $msysParent) {
+            Remove-Item $msysParent -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $msysParent -Force | Out-Null
+
+          Write-Host "Resolved MSYS2 archive: $archiveName"
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing
+          if (!(Test-Path $archive)) {
+            Write-Error "MSYS2 download failed: expected archive $archive was not created."
+            exit 1
+          }
+
+          $sevenZip = "${env:ProgramFiles}\7-Zip\7z.exe"
+          if (!(Test-Path $sevenZip)) {
+            $sevenZip = '7z.exe'
+          }
+
+          $extractWork = Join-Path $env:RUNNER_TEMP "msys2-base-$msysSource-$snapshotDate"
+          if (Test-Path $extractWork) {
+            Remove-Item $extractWork -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $extractWork -Force | Out-Null
+
+          Write-Host "Extracting $archive to $extractWork with 7-Zip"
+          & $sevenZip x $archive "-o$extractWork" -y
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "MSYS2 zstd extraction failed."
+            exit $LASTEXITCODE
+          }
+
+          $tarFile = Get-ChildItem $extractWork -Filter '*.tar' -File | Select-Object -First 1
+          if (-not $tarFile) {
+            Write-Error "MSYS2 extraction failed: no .tar file found after zstd extraction."
+            exit 1
+          }
+
+          Write-Host "Extracting $($tarFile.FullName) to $msysParent with 7-Zip"
+          & $sevenZip x $tarFile.FullName "-o$msysParent" -y
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "MSYS2 tar extraction failed."
+            exit $LASTEXITCODE
+          }
+
+          if (!(Test-Path (Join-Path $msys 'usr\bin\pacman.exe'))) {
+            Write-Error "MSYS2 base extraction failed: pacman.exe not found under $msys."
+            exit 1
+          }
+
+          "MSYS2_ROOT=$msys" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build sanitized PATH for selected lane
+        id: lanepath
+        shell: powershell
+        run: |
+          $msys = $env:MSYS2_ROOT
+          $prefix = $env:MSYS2_PREFIX
+          if (!(Test-Path $msys)) {
+            Write-Error "Cannot build lane PATH because MSYS2_ROOT does not exist: $msys"
+            exit 1
+          }
+
+          $orig = $env:Path -split ';'
+          $filtered = $orig | Where-Object {
+            $_ -and
+            ($_ -notlike '*\Ruby\*\x64\msys64\*') -and
+            ($_ -notmatch '^C:\\hostedtoolcache\\windows\\Ruby(\\|$)') -and
+            ($_ -ne 'C:\mingw64\bin') -and
+            ($_ -notmatch '^C:\\Strawberry(\\|$)')
+          }
+          $lanePath = @("$msys\$prefix\bin", "$msys\usr\bin") + $filtered
+          $joined = ($lanePath -join ';')
+
+          "PATH_GTK3_LANE=$joined" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "path=$joined" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "RI_DEVKIT=$msys" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "MSYSTEM_PREFIX=/$prefix" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Initialize MSYS2 keyring
+        shell: powershell
+        env:
+          PATH: ${{ steps.lanepath.outputs.path }}
+        run: |
+          $msys = $env:MSYS2_ROOT
+          $env:Path = "$msys\$env:MSYS2_PREFIX\bin;$msys\usr\bin;$env:Path"
+          $bash = Join-Path $msys 'usr\bin\bash.exe'
+          if (!(Test-Path $bash)) {
+            Write-Error "MSYS2 keyring initialization failed: bash.exe not found at $bash."
+            exit 1
+          }
+
+          & $bash -lc 'pacman-key --init'
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "MSYS2 keyring initialization failed: pacman-key --init exited with $LASTEXITCODE."
+            exit $LASTEXITCODE
+          }
+
+          & $bash -lc 'pacman-key --populate msys2'
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "MSYS2 keyring initialization failed: pacman-key --populate msys2 exited with $LASTEXITCODE."
+            exit $LASTEXITCODE
+          }
+
+      - name: Refresh current MSYS2 package universe
+        if: ${{ inputs.msys-source == 'current' }}
+        shell: powershell
+        env:
+          PATH: ${{ steps.lanepath.outputs.path }}
+        run: |
+          $msys = $env:MSYS2_ROOT
+          $env:Path = "$msys\$env:MSYS2_PREFIX\bin;$msys\usr\bin;$env:Path"
+          $bash = Join-Path $msys 'usr\bin\bash.exe'
+          if (!(Test-Path $bash)) {
+            Write-Error "Current MSYS2 refresh failed: bash.exe not found at $bash."
+            exit 1
+          }
+
+          Write-Host "Refreshing current MSYS2 package databases and base packages."
+          & $bash -lc 'pacman -Syu --noconfirm'
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Current MSYS2 refresh failed: pacman -Syu exited with $LASTEXITCODE."
+            exit $LASTEXITCODE
+          }
+
+      - name: Install GTK3 native build surface
+        shell: powershell
+        env:
+          PATH: ${{ steps.lanepath.outputs.path }}
+        run: |
+          $msys = $env:MSYS2_ROOT
+          $prefix = $env:MSYS2_PREFIX
+          $packagePrefix = $env:MSYS2_PACKAGE_PREFIX
+          $pacman = Join-Path $msys 'usr\bin\pacman.exe'
+          $env:Path = "$msys\$prefix\bin;$msys\usr\bin;$env:Path"
+
+          if ($env:MSYS2_SOURCE -eq 'current') {
+            Write-Host "Installing from current MSYS2 package DB after pacman -Syu refresh."
+          } else {
+            Write-Host "Installing from bundled dated package DB. Intentionally not running pacman -Sy or pacman -Syu."
+          }
+
+          $packages = @(
+            "$packagePrefix-gcc",
+            "$packagePrefix-gcc-libs",
+            "$packagePrefix-make",
+            "$packagePrefix-pkgconf",
+            "$packagePrefix-gobject-introspection",
+            "$packagePrefix-gobject-introspection-runtime",
+            "$packagePrefix-gtk3",
+            "make"
+          )
+          & $pacman -S --needed --noconfirm @packages
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "MSYS2 install failed: pacman could not install the GTK3 native build surface for $env:PLATFORM_LANE."
+            exit $LASTEXITCODE
+          }
+
+          Write-Host "::group::Installed package versions"
+          & $pacman -Q
+          Write-Host "::endgroup::"
+
+          $gcc = Join-Path $msys "$prefix\bin\gcc.exe"
+          $pkgc = Join-Path $msys "$prefix\bin\pkg-config.exe"
+          "CC=$gcc" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "PKG_CONFIG=$pkgc" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "PKG_CONFIG_PATH=$msys\$prefix\lib\pkgconfig;$msys\lib\pkgconfig" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Download and extract RubyInstaller
+        shell: powershell
+        run: |
+          $rubyInstallerVersion = $env:RUBY_INSTALLER_VERSION
+          $rubyParent = 'C:\Ruby4Lich5\ruby'
+          $archive = Join-Path $env:RUNNER_TEMP "rubyinstaller-$rubyInstallerVersion-x64.7z"
+          $url = "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-$rubyInstallerVersion/rubyinstaller-$rubyInstallerVersion-x64.7z"
+
+          if (Test-Path $rubyParent) {
+            Remove-Item $rubyParent -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $rubyParent -Force | Out-Null
+
+          Write-Host "Downloading RubyInstaller $rubyInstallerVersion from $url"
+          Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing
+          if (!(Test-Path $archive)) {
+            Write-Error "RubyInstaller download failed: expected archive $archive was not created."
+            exit 1
+          }
+
+          $sevenZip = "${env:ProgramFiles}\7-Zip\7z.exe"
+          if (!(Test-Path $sevenZip)) {
+            $sevenZip = '7z.exe'
+          }
+
+          Write-Host "Extracting RubyInstaller to $rubyParent with 7-Zip"
+          & $sevenZip x $archive "-o$rubyParent" -y
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "RubyInstaller extraction failed."
+            exit $LASTEXITCODE
+          }
+
+          $rubyExe = Get-ChildItem $rubyParent -Recurse -Filter ruby.exe -File | Where-Object {
+            $_.FullName -match '\\bin\\ruby\.exe$'
+          } | Select-Object -First 1
+          if (-not $rubyExe) {
+            Write-Error "RubyInstaller extraction failed: ruby.exe was not found under $rubyParent."
+            exit 1
+          }
+
+          $rubyRoot = Split-Path (Split-Path $rubyExe.FullName -Parent) -Parent
+          Write-Host "RubyInstaller root: $rubyRoot"
+          & $rubyExe.FullName --version
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "RubyInstaller validation failed: ruby.exe could not run."
+            exit $LASTEXITCODE
+          }
+
+          $rubyPlatform = & $rubyExe.FullName -e "require 'rubygems'; print Gem::Platform.local.to_s"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "RubyInstaller validation failed: Ruby could not report Gem::Platform.local."
+            exit $LASTEXITCODE
+          }
+          Write-Host "Ruby platform: $rubyPlatform"
+          if ($rubyPlatform -ne $env:GEM_PLATFORM) {
+            Write-Error "RubyInstaller validation failed: selected lane $env:PLATFORM_LANE expects Ruby platform $env:GEM_PLATFORM, but RubyInstaller $rubyInstallerVersion reports $rubyPlatform. Choose a matching RubyInstaller version or platform lane."
+            exit 1
+          }
+
+          "RUBY_ROOT=$rubyRoot" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "RUBY_EXE=$($rubyExe.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build patched glib2 gem and smoke GTK3
+        shell: powershell
+        env:
+          PATH: ${{ steps.lanepath.outputs.path }}
+        run: |
+          $msys = $env:MSYS2_ROOT
+          $prefix = $env:MSYS2_PREFIX
+          $rubyRoot = $env:RUBY_ROOT
+          $rubyExe = $env:RUBY_EXE
+          if (!(Test-Path $rubyExe)) {
+            Write-Error "Patched glib2 build failed: RUBY_EXE does not exist: $rubyExe"
+            exit 1
+          }
+
+          $pathEntries = $env:Path -split ';' | Where-Object {
+            $_ -and ($_ -notmatch '^C:\\hostedtoolcache\\windows\\Ruby(\\|$)')
+          }
+          $env:Path = (@("$rubyRoot\bin", "$msys\$prefix\bin", "$msys\usr\bin") + $pathEntries) -join ';'
+          $env:RI_DEVKIT = $msys
+          $env:MSYSTEM_PREFIX = "/$prefix"
+
+          Write-Host "::group::GTK3 lane build surface"
+          Write-Host "PLATFORM_LANE=$env:PLATFORM_LANE"
+          Write-Host "MSYS2_SOURCE=$env:MSYS2_SOURCE"
+          Write-Host "MSYSTEM=$env:MSYSTEM"
+          Write-Host "MSYSTEM_PREFIX=$env:MSYSTEM_PREFIX"
+          Write-Host "MSYS2_PREFIX=$env:MSYS2_PREFIX"
+          Write-Host "MSYS2_PACKAGE_PREFIX=$env:MSYS2_PACKAGE_PREFIX"
+          Write-Host "GEM_PLATFORM=$env:GEM_PLATFORM"
+          Write-Host "RUBY_INSTALLER_VERSION=$env:RUBY_INSTALLER_VERSION"
+          Write-Host "RUBY_GNOME_VERSION=$env:RUBY_GNOME_VERSION"
+          Write-Host "GLIB2_GC_REPAIR=$env:GLIB2_GC_REPAIR"
+          Write-Host "CC=$env:CC"
+          Write-Host "PKG_CONFIG=$env:PKG_CONFIG"
+          Write-Host "PKG_CONFIG_PATH=$env:PKG_CONFIG_PATH"
+          where.exe ruby
+          where.exe gcc
+          where.exe pkg-config
+          & $env:PKG_CONFIG --version
+          & $env:PKG_CONFIG --modversion gtk+-3.0 gobject-introspection-1.0 glib-2.0 gobject-2.0 gio-2.0 cairo pango
+          Write-Host "::endgroup::"
+
+          & $rubyExe -S gem install pkg-config native-package-installer --no-document
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Patched glib2 build failed: prerequisite gems could not install."
+            exit $LASTEXITCODE
+          }
+
+          $rubyGnomeTag = $env:RUBY_GNOME_VERSION
+          $sourceZip = Join-Path $env:RUNNER_TEMP "ruby-gnome-$rubyGnomeTag.zip"
+          $sourceUrl = "https://github.com/ruby-gnome/ruby-gnome/archive/refs/tags/$rubyGnomeTag.zip"
+          Write-Host "Downloading Ruby-GNOME source $rubyGnomeTag from $sourceUrl"
+          Invoke-WebRequest -Uri $sourceUrl -OutFile $sourceZip -UseBasicParsing
+          if (!(Test-Path $sourceZip)) {
+            Write-Error "Patched glib2 build failed: Ruby-GNOME source archive was not created: $sourceZip"
+            exit 1
+          }
+
+          Expand-Archive -Path $sourceZip -DestinationPath $env:RUNNER_TEMP -Force
+          $expandedRoot = Join-Path $env:RUNNER_TEMP "ruby-gnome-$rubyGnomeTag"
+          if (!(Test-Path $expandedRoot)) {
+            Write-Error "Patched glib2 build failed: Ruby-GNOME source did not expand to $expandedRoot."
+            exit 1
+          }
+
+          $objectSource = Join-Path $expandedRoot 'glib2\ext\glib2\rbgobj_object.c'
+          if (!(Test-Path $objectSource)) {
+            Write-Error "Patched glib2 build failed: glib2 object source not found at $objectSource."
+            exit 1
+          }
+
+          if ($env:GLIB2_GC_REPAIR -eq 'cache-ruby-property-setter-values') {
+            $old = '    rb_funcall(GOBJ2RVAL(object), ruby_setter, 1, GVAL2RVAL(value));'
+            $new = @(
+              '    {',
+              '        VALUE rb_object = GOBJ2RVAL(object);',
+              '        VALUE rb_value = GVAL2RVAL(value);',
+              '        rb_funcall(rb_object, ruby_setter, 1, rb_value);',
+              '        if (G_TYPE_IS_OBJECT(G_PARAM_SPEC_VALUE_TYPE(pspec))) {',
+              '            G_CHILD_SET(rb_object, rb_intern(g_param_spec_get_name(pspec)), rb_value);',
+              '        }',
+              '    }'
+            ) -join "`n"
+            $content = Get-Content $objectSource -Raw
+            if (-not $content.Contains($old)) {
+              Write-Error "Patched glib2 build failed: glib2 patch anchor was not found in $objectSource."
+              exit 1
+            }
+            Set-Content -Path $objectSource -Value $content.Replace($old, $new.TrimEnd()) -Encoding ascii
+            Write-Host "Applied glib2 GC repair patch to $objectSource"
+          } else {
+            Write-Host "Building glib2 without the optional GC repair patch."
+          }
+
+          $artifactDir = Join-Path $env:GITHUB_WORKSPACE 'artifacts\gtk3-current-lane'
+          New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null
+
+          Push-Location (Join-Path $expandedRoot 'glib2')
+          & $rubyExe -S gem build glib2.gemspec
+          if ($LASTEXITCODE -ne 0) {
+            Pop-Location
+            Write-Error "Patched glib2 build failed: glib2 gem could not be built."
+            exit $LASTEXITCODE
+          }
+          $patchedGlib2Gem = Join-Path (Get-Location) "glib2-$rubyGnomeTag.gem"
+          if (!(Test-Path $patchedGlib2Gem)) {
+            Pop-Location
+            Write-Error "Patched glib2 build failed: expected gem was not created: $patchedGlib2Gem"
+            exit 1
+          }
+          Copy-Item $patchedGlib2Gem $artifactDir -Force
+          & $rubyExe -S gem install $patchedGlib2Gem --local --no-document
+          if ($LASTEXITCODE -ne 0) {
+            Pop-Location
+            Write-Error "Patched glib2 build failed: glib2 gem could not be installed."
+            exit $LASTEXITCODE
+          }
+          Pop-Location
+
+          & $rubyExe -S gem install gtk3 --version "$env:RUBY_GNOME_VERSION" --no-document
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "GTK3 smoke failed: gtk3 $env:RUBY_GNOME_VERSION could not install against the selected glib2."
+            exit $LASTEXITCODE
+          }
+
+          Write-Host "::group::Installed Ruby-GNOME gems"
+          & $rubyExe -S gem list glib2 gobject-introspection gio2 cairo cairo-gobject pango gdk_pixbuf2 atk gdk3 gtk3
+          Write-Host "::endgroup::"
+
+          & $rubyExe -e "require 'glib2'; require 'gtk3'; Gtk.init; puts 'GTK3 current lane smoke OK'"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "GTK3 smoke failed: Ruby could not require glib2/gtk3 and initialize GTK."
+            exit $LASTEXITCODE
+          }
+
+      - name: Upload patched glib2 proof artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: patched-glib2-${{ inputs.ruby-gnome-version }}-${{ inputs.platform-lane }}
+          path: artifacts/gtk3-current-lane/*.gem
+          retention-days: 365
+          if-no-files-found: error
