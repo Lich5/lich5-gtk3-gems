@@ -505,6 +505,7 @@ jobs:
         shell: powershell
         env:
           BINARY_GEM: "true"
+          KEEP_BUILT_EXTENSIONS: "true"
           PATH: ${{ steps.lanepath.outputs.path }}
         run: |
           $msys = $env:MSYS2_ROOT
