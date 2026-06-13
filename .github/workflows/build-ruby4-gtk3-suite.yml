@@ -35,6 +35,26 @@ on:
         options:
           - "cache-ruby-property-setter-values"
           - "none"
+      dependency-closure-source:
+        description: "Source for non-GTK Lich runtime gem closure."
+        required: false
+        default: "explicit-list"
+        type: choice
+        options:
+          - "explicit-list"
+          - "gemfile-lock"
+      gemfile-lock-path:
+        description: "Future hook: Gemfile.lock path when dependency-closure-source=gemfile-lock."
+        required: false
+        default: "Gemfile.lock"
+      lich-runtime-gems:
+        description: "Whitespace or comma separated runtime gems to add when dependency-closure-source=explicit-list."
+        required: false
+        default: "red-colors sqlite3 ox nokogiri mechanize"
+      lich-native-runtime-gems:
+        description: "Whitespace or comma separated Lich runtime gems that must resolve to binary platform gems."
+        required: false
+        default: "sqlite3 ox nokogiri"
 
 permissions:
   contents: read
@@ -65,6 +85,10 @@ jobs:
           $rubyGnomeVersion = '${{ inputs.ruby-gnome-version }}'
           $cairoVersion = '${{ inputs.cairo-version }}'
           $glib2GcRepair = '${{ inputs.glib2-gc-repair }}'
+          $dependencyClosureSource = '${{ inputs.dependency-closure-source }}'
+          $gemfileLockPath = '${{ inputs.gemfile-lock-path }}'
+          $lichRuntimeGems = '${{ inputs.lich-runtime-gems }}'
+          $lichNativeRuntimeGems = '${{ inputs.lich-native-runtime-gems }}'
 
           if ($msysSource -notin @('current', 'dated')) {
             Write-Error "msys-source must be 'current' or 'dated'; received '$msysSource'."
@@ -90,6 +114,18 @@ jobs:
             Write-Error "glib2-gc-repair must be 'cache-ruby-property-setter-values' or 'none'; received '$glib2GcRepair'."
             exit 1
           }
+          if ($dependencyClosureSource -notin @('explicit-list', 'gemfile-lock')) {
+            Write-Error "dependency-closure-source must be 'explicit-list' or 'gemfile-lock'; received '$dependencyClosureSource'."
+            exit 1
+          }
+          if ([string]::IsNullOrWhiteSpace($gemfileLockPath)) {
+            Write-Error "gemfile-lock-path must not be empty."
+            exit 1
+          }
+          if ($dependencyClosureSource -eq 'explicit-list' -and [string]::IsNullOrWhiteSpace($lichRuntimeGems)) {
+            Write-Error "lich-runtime-gems must list at least one gem when dependency-closure-source=explicit-list."
+            exit 1
+          }
 
           "MSYS2_SOURCE=$msysSource" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "MSYS2_SNAPSHOT_DATE=$snapshotDate" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
@@ -97,6 +133,10 @@ jobs:
           "RUBY_GNOME_VERSION=$rubyGnomeVersion" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "CAIRO_VERSION=$cairoVersion" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "GLIB2_GC_REPAIR=$glib2GcRepair" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "DEPENDENCY_CLOSURE_SOURCE=$dependencyClosureSource" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "GEMFILE_LOCK_PATH=$gemfileLockPath" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "LICH_RUNTIME_GEMS=$lichRuntimeGems" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "LICH_NATIVE_RUNTIME_GEMS=$lichNativeRuntimeGems" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Download and extract MSYS2 base archive
         shell: powershell
@@ -711,6 +751,102 @@ jobs:
             Write-Host "::endgroup::"
           }
 
+      - name: Install and collect Lich runtime gem closure
+        shell: powershell
+        env:
+          PATH: ${{ steps.lanepath.outputs.path }}
+        run: |
+          $msys = $env:MSYS2_ROOT
+          $prefix = $env:MSYS2_PREFIX
+          $rubyRoot = $env:RUBY_ROOT
+          $rubyExe = $env:RUBY_EXE
+          $gemExe = $env:GEM_EXE
+          $env:Path = "$rubyRoot\bin;$msys\$prefix\bin;$msys\usr\bin;$env:Path"
+          $env:RI_DEVKIT = $msys
+          $env:MSYSTEM_PREFIX = "/$prefix"
+          $env:MINGW_PREFIX = "/$prefix"
+
+          if ($env:DEPENDENCY_CLOSURE_SOURCE -eq 'gemfile-lock') {
+            Write-Error "Gemfile.lock dependency closure is reserved but not implemented yet. Use dependency-closure-source=explicit-list until Gemfile.lock parsing is wired for Lich."
+            exit 1
+          }
+
+          $pkgDir = Join-Path $env:GITHUB_WORKSPACE 'pkg'
+          New-Item -ItemType Directory -Path $pkgDir -Force | Out-Null
+
+          $runtimeGems = @(
+            ($env:LICH_RUNTIME_GEMS -split '[,\s]+') |
+              Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+              Sort-Object -Unique
+          )
+          $nativeRuntimeGems = @(
+            ($env:LICH_NATIVE_RUNTIME_GEMS -split '[,\s]+') |
+              Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+              Sort-Object -Unique
+          )
+          if ($runtimeGems.Count -eq 0) {
+            Write-Error "Lich runtime gem closure failed: no gems were selected."
+            exit 1
+          }
+          foreach ($gemName in $nativeRuntimeGems) {
+            if ($runtimeGems -notcontains $gemName) {
+              Write-Error "Lich runtime gem closure failed: native runtime gem $gemName is not present in lich-runtime-gems."
+              exit 1
+            }
+          }
+
+          Write-Host "::group::Install Lich runtime gems"
+          Write-Host "Dependency closure source: $env:DEPENDENCY_CLOSURE_SOURCE"
+          Write-Host "Runtime gems: $($runtimeGems -join ', ')"
+          foreach ($gemName in $runtimeGems) {
+            & $gemExe install $gemName --clear-sources --source https://rubygems.org --force
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Lich runtime gem closure failed: gem install $gemName failed."
+              exit $LASTEXITCODE
+            }
+          }
+          Write-Host "::endgroup::"
+
+          $cacheRoots = @(
+            Join-Path $rubyRoot 'lib\ruby\gems\4.0.0\cache',
+            Join-Path $env:USERPROFILE '.local\share\gem\ruby\4.0.0\cache'
+          ) | Where-Object { Test-Path $_ } | Sort-Object -Unique
+
+          if ($cacheRoots.Count -eq 0) {
+            Write-Error "Lich runtime gem closure failed: no RubyGems cache directories were found after runtime gem install."
+            exit 1
+          }
+
+          Write-Host "::group::Collect cached runtime gem files"
+          foreach ($cacheRoot in $cacheRoots) {
+            Write-Host "Cache root: $cacheRoot"
+            Get-ChildItem -Path $cacheRoot -Filter '*.gem' -File |
+              ForEach-Object {
+                Copy-Item $_.FullName (Join-Path $pkgDir $_.Name) -Force
+                Write-Host $_.Name
+              }
+          }
+          Write-Host "::endgroup::"
+
+          Write-Host "::group::Installed Lich runtime gems"
+          foreach ($gemName in $runtimeGems) {
+            & $gemExe list $gemName
+          }
+          Write-Host "::endgroup::"
+
+          Write-Host "::group::Validate native runtime binary gems"
+          foreach ($gemName in $nativeRuntimeGems) {
+            $platformGem = Get-ChildItem -Path $pkgDir -Filter "$gemName-*$env:GEM_PLATFORM.gem" -File |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1
+            if (-not $platformGem) {
+              Write-Error "Lich runtime gem closure failed: $gemName installed, but no $env:GEM_PLATFORM binary gem was collected in pkg. Do not ship a source native gem that requires DevKit on install."
+              exit 1
+            }
+            Write-Host "$gemName => $($platformGem.Name)"
+          }
+          Write-Host "::endgroup::"
+
       - name: Smoke local GTK3 suite
         shell: powershell
         env:
@@ -724,19 +860,51 @@ jobs:
           $env:Path = "$rubyRoot\bin;$msys\$prefix\bin;$msys\usr\bin;$env:Path"
 
           Write-Host "::group::Local GTK3 suite gems"
-          & $gemExe list glib2 gobject-introspection gio2 cairo cairo-gobject pango gdk_pixbuf2 atk gdk3 gtk3
+          & $gemExe list glib2 gobject-introspection gio2 cairo cairo-gobject pango gdk_pixbuf2 atk gdk3 gtk3 red-colors sqlite3 ox nokogiri mechanize
           Write-Host "::endgroup::"
 
-          & $rubyExe -e "require 'glib2'; require 'gtk3'; Gtk.init; puts 'Ruby4 GTK3 suite smoke OK'"
+          & $rubyExe -e "require 'sqlite3'; require 'ox'; require 'glib2'; require 'gtk3'; Gtk.init; puts 'Ruby4 GTK3/Lich runtime smoke OK'"
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "Ruby4 GTK3 suite smoke failed."
+            Write-Error "Ruby4 GTK3/Lich runtime smoke failed."
             exit $LASTEXITCODE
           }
 
-      - name: Upload GTK3 suite gems
+      - name: Package Lich runtime gem bundle
+        shell: powershell
+        run: |
+          $pkgDir = Join-Path $env:GITHUB_WORKSPACE 'pkg'
+          $distDir = Join-Path $env:GITHUB_WORKSPACE 'dist'
+          New-Item -ItemType Directory -Path $distDir -Force | Out-Null
+
+          $gems = @(Get-ChildItem -Path $pkgDir -Filter '*.gem' -File | Sort-Object Name)
+          if ($gems.Count -eq 0) {
+            Write-Error "Lich runtime gem bundle failed: no .gem files found in $pkgDir."
+            exit 1
+          }
+
+          $zipPath = Join-Path $distDir 'ruby4-lich5-runtime-gems-windows-ucrt64.zip'
+          if (Test-Path $zipPath) {
+            Remove-Item $zipPath -Force
+          }
+
+          Write-Host "::group::Lich runtime gem bundle contents"
+          $gems | ForEach-Object { Write-Host $_.Name }
+          Write-Host "::endgroup::"
+
+          Compress-Archive -Path (Join-Path $pkgDir '*.gem') -DestinationPath $zipPath -Force
+          if (!(Test-Path $zipPath)) {
+            Write-Error "Lich runtime gem bundle failed: $zipPath was not created."
+            exit 1
+          }
+
+          Write-Host "Created $zipPath"
+
+      - name: Upload Lich runtime gems
         uses: actions/upload-artifact@v4
         with:
-          name: ruby4-gtk3-suite-windows-ucrt64
-          path: pkg/*.gem
+          name: ruby4-lich5-runtime-gems-windows-ucrt64
+          path: |
+            pkg/*.gem
+            dist/*.zip
           retention-days: 90
           if-no-files-found: error
