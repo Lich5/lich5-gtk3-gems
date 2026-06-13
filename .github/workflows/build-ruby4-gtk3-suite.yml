@@ -496,7 +496,7 @@ jobs:
           $env:MSYSTEM_PREFIX = "/$prefix"
           $env:MINGW_PREFIX = "/$prefix"
 
-          & $gemExe install rake pkg-config native-package-installer --no-document
+          & $gemExe install rake pkg-config native-package-installer
           if ($LASTEXITCODE -ne 0) {
             Write-Error "GTK3 suite build failed: prerequisite gems could not install."
             exit $LASTEXITCODE
@@ -621,7 +621,7 @@ jobs:
               exit 1
             }
 
-            & $gemExe install $builtGem.FullName --local --no-document --force
+            & $gemExe install $builtGem.FullName --local --force
             if ($LASTEXITCODE -ne 0) {
               Write-Error "GTK3 suite build failed: local install failed for $($builtGem.Name)."
               exit $LASTEXITCODE
