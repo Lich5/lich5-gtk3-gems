@@ -295,6 +295,7 @@ jobs:
           $packages = @(
             "$packagePrefix-gcc",
             "$packagePrefix-gcc-libs",
+            "$packagePrefix-binutils",
             "$packagePrefix-make",
             "$packagePrefix-pkgconf",
             "$packagePrefix-gobject-introspection",
@@ -678,54 +679,104 @@ jobs:
 
               Copy-Item "$msys\$prefix\lib\girepository-1.0\*.typelib" $typelibDst -Force
 
-              $dlls = @(
-                'libgirepository-1.0-1.dll',
-                'libgirepository-2.0-0.dll',
+              $prefixBin = Join-Path $msys "$prefix\bin"
+              $objdump = Join-Path $prefixBin 'objdump.exe'
+              $gIrInspect = Join-Path $prefixBin 'g-ir-inspect.exe'
+              if (!(Test-Path $objdump)) {
+                Write-Error "GTK3 suite build failed: objdump.exe was not found at $objdump; cannot derive runtime DLL closure."
+                exit 1
+              }
+              if (!(Test-Path $gIrInspect)) {
+                Write-Error "GTK3 suite build failed: g-ir-inspect.exe was not found at $gIrInspect; cannot derive GI shared-library roots."
+                exit 1
+              }
+
+              $runtimeDlls = [System.Collections.Hashtable]::new([StringComparer]::OrdinalIgnoreCase)
+
+              function Get-DllDependencies([string] $path) {
+                if (!(Test-Path $path)) {
+                  return @()
+                }
+                @(& $objdump -p $path 2>$null |
+                  Select-String -Pattern 'DLL Name:\s*(.+)$' |
+                  ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() } |
+                  Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                  Sort-Object -Unique)
+              }
+
+              function Add-DllClosure([string] $dllName) {
+                if ([string]::IsNullOrWhiteSpace($dllName)) {
+                  return
+                }
+                $dllPath = Join-Path $prefixBin $dllName
+                if (!(Test-Path $dllPath)) {
+                  Write-Host "::notice::Runtime DLL dependency $dllName is not in $prefixBin; assuming system or non-UCRT dependency."
+                  return
+                }
+                if ($runtimeDlls.ContainsKey($dllName)) {
+                  return
+                }
+                $runtimeDlls[$dllName] = $dllPath
+                foreach ($dependency in Get-DllDependencies $dllPath) {
+                  Add-DllClosure $dependency
+                }
+              }
+
+              function Add-DllDependenciesFromPath([string] $path) {
+                foreach ($dependency in Get-DllDependencies $path) {
+                  Add-DllClosure $dependency
+                }
+              }
+
+              $env:GI_TYPELIB_PATH = "$msys\$prefix\lib\girepository-1.0"
+              Get-ChildItem "$msys\$prefix\lib\girepository-1.0" -Filter '*.typelib' -File |
+                ForEach-Object {
+                  $namespace = $_.BaseName -replace '-[0-9][0-9.]*$', ''
+                  $shlibs = @(& $gIrInspect --print-shlibs $namespace 2>$null)
+                  if ($LASTEXITCODE -eq 0) {
+                    foreach ($line in $shlibs) {
+                      foreach ($match in [regex]::Matches($line, '[A-Za-z0-9_+.-]+\.dll')) {
+                        Add-DllClosure $match.Value
+                      }
+                    }
+                  } else {
+                    Write-Host "::notice::g-ir-inspect could not report shared libraries for namespace $namespace."
+                  }
+                }
+
+              $fallbackRuntimeRoots = @(
+                'libgirepository*.dll',
                 'libglib-2.0-0.dll',
                 'libgobject-2.0-0.dll',
                 'libgio-2.0-0.dll',
                 'libgmodule-2.0-0.dll',
-                'libffi-8.dll',
-                'libintl-8.dll',
-                'libiconv-2.dll',
-                'libpcre2-8-0.dll',
-                'zlib1.dll',
-                'libatk-1.0-0.dll',
-                'libgdk_pixbuf-2.0-0.dll',
-                'libpango-1.0-0.dll',
-                'libpangocairo-1.0-0.dll',
-                'libpangoft2-1.0-0.dll',
-                'libpangowin32-1.0-0.dll',
-                'libgdk-3-0.dll',
                 'libgtk-3-0.dll',
-                'libcairo-2.dll',
-                'libcairo-gobject-2.dll',
-                'libharfbuzz-0.dll',
-                'libharfbuzz-gobject-0.dll',
-                'libfreetype-6.dll',
-                'libfontconfig-1.dll',
-                'libpixman-1-0.dll',
-                'libpng16-16.dll',
-                'libjpeg-8.dll',
-                'libtiff-6.dll',
-                'libepoxy-0.dll',
-                'libfribidi-0.dll',
-                'libthai-0.dll',
-                'libdatrie-1.dll',
-                'librsvg-2-2.dll',
-                'libxml2-2.dll',
-                'libwebp-7.dll',
-                'libsharpyuv-0.dll',
-                'libdeflate.dll',
-                'libjbig-0.dll',
-                'libLerc.dll'
+                'libgdk-3-0.dll',
+                'libgdk_pixbuf-2.0-0.dll',
+                'libatk-1.0-0.dll',
+                'libpango*.dll',
+                'libcairo*.dll'
               )
-              foreach ($dll in $dlls) {
-                $src = Join-Path $msys "$prefix\bin\$dll"
-                if (Test-Path $src) {
-                  Copy-Item $src $binDst -Force
-                } else {
-                  Write-Host "::warning::$dll not found in $msys\$prefix\bin"
+              foreach ($pattern in $fallbackRuntimeRoots) {
+                Get-ChildItem -Path $prefixBin -Filter $pattern -File -ErrorAction SilentlyContinue |
+                  ForEach-Object { Add-DllClosure $_.Name }
+              }
+
+              Write-Host "::group::Discovered GTK/GI runtime DLL closure"
+              foreach ($dll in ($runtimeDlls.Keys | Sort-Object)) {
+                Write-Host $dll
+              }
+              Write-Host "::endgroup::"
+
+              if ($runtimeDlls.Count -eq 0) {
+                Write-Error "GTK3 suite build failed: no GTK/GI runtime DLLs were discovered for bundling."
+                exit 1
+              }
+
+              foreach ($requiredRuntimeDll in @('libgdk_pixbuf-2.0-0.dll', 'libgtk-3-0.dll')) {
+                if (-not $runtimeDlls.ContainsKey($requiredRuntimeDll)) {
+                  Write-Error "GTK3 suite build failed: expected runtime DLL $requiredRuntimeDll was not discovered in the GTK/GI closure."
+                  exit 1
                 }
               }
 
@@ -738,13 +789,25 @@ jobs:
 
               $loaderSrc = "$msys\$prefix\lib\gdk-pixbuf-2.0\2.10.0\loaders"
               if (Test-Path $loaderSrc) {
-                Copy-Item "$loaderSrc\*.dll" $loaderDst -Force
+                Get-ChildItem -Path $loaderSrc -Filter '*.dll' -File |
+                  ForEach-Object {
+                    Copy-Item $_.FullName $loaderDst -Force
+                    Add-DllDependenciesFromPath $_.FullName
+                  }
                 $cacheDst = Split-Path $loaderDst -Parent
                 $env:GDK_PIXBUF_MODULEDIR = $loaderDst
                 & "$msys\$prefix\bin\gdk-pixbuf-query-loaders.exe" | Set-Content (Join-Path $cacheDst 'loaders.cache.in')
                 (Get-Content (Join-Path $cacheDst 'loaders.cache.in') -Raw).Replace($loaderDst, '@@MODULEDIR@@') |
                   Set-Content (Join-Path $cacheDst 'loaders.cache.in') -Encoding ascii
               }
+
+              Write-Host "::group::Bundled GTK/GI runtime DLL closure"
+              foreach ($dll in ($runtimeDlls.Keys | Sort-Object)) {
+                $sourceDll = $runtimeDlls[$dll]
+                Copy-Item $sourceDll $binDst -Force
+                Write-Host $dll
+              }
+              Write-Host "::endgroup::"
 
               Push-Location (Join-Path $env:GITHUB_WORKSPACE 'gems\gobject-introspection')
               & $gemExe build gobject-introspection.gemspec
