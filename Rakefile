@@ -330,7 +330,11 @@ namespace :build do
       FileUtils.mv(built_gem, "#{original_dir}/#{PKG_DIR}/")
 
       if so_file
-        FileUtils.rm(so_file)
+        if ENV['KEEP_BUILT_EXTENSIONS'] == 'true'
+          puts "   (Keeping #{so_file} for downstream suite linking)"
+        else
+          FileUtils.rm(so_file)
+        end
         puts "✅ Built: pkg/#{File.basename(built_gem)}"
         puts "   (Ruby #{current_ruby_dot} .so included for multi-Ruby support)"
       else
