@@ -517,6 +517,7 @@ jobs:
           $env:RI_DEVKIT = $msys
           $env:MSYSTEM_PREFIX = "/$prefix"
           $env:MINGW_PREFIX = "/$prefix"
+          $env:RCAIRO_SOURCE_DIR = Join-Path $env:GITHUB_WORKSPACE 'gems\cairo'
 
           $pkgDir = Join-Path $env:GITHUB_WORKSPACE 'pkg'
           if (Test-Path $pkgDir) {
