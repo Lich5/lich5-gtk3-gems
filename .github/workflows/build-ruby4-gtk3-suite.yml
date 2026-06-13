@@ -329,8 +329,15 @@ jobs:
             exit 1
           }
 
+          $gemExe = Join-Path $rubyRoot 'bin\gem.cmd'
+          if (!(Test-Path $gemExe)) {
+            Write-Error "RubyInstaller validation failed: gem.cmd was not found at $gemExe."
+            exit 1
+          }
+
           "RUBY_ROOT=$rubyRoot" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "RUBY_EXE=$($rubyExe.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "GEM_EXE=$gemExe" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Refresh suite sources to requested versions
         shell: powershell
@@ -356,7 +363,7 @@ jobs:
           }
 
           Push-Location $work
-          & $env:RUBY_EXE -S gem fetch cairo --version $cairoVersion --clear-sources --source https://rubygems.org --no-document
+          & $env:GEM_EXE fetch cairo --version $cairoVersion --clear-sources --source https://rubygems.org
           $fetchExit = $LASTEXITCODE
           Pop-Location
           $cairoGem = Join-Path $work "cairo-$cairoVersion.gem"
@@ -365,7 +372,7 @@ jobs:
             exit 1
           }
           Push-Location $work
-          & $env:RUBY_EXE -S gem unpack $cairoGem
+          & $env:GEM_EXE unpack $cairoGem
           if ($LASTEXITCODE -ne 0) {
             Pop-Location
             Write-Error "Source refresh failed: cairo $cairoVersion gem could not be unpacked."
@@ -483,12 +490,13 @@ jobs:
           $prefix = $env:MSYS2_PREFIX
           $rubyRoot = $env:RUBY_ROOT
           $rubyExe = $env:RUBY_EXE
+          $gemExe = $env:GEM_EXE
           $env:Path = "$rubyRoot\bin;$msys\$prefix\bin;$msys\usr\bin;$env:Path"
           $env:RI_DEVKIT = $msys
           $env:MSYSTEM_PREFIX = "/$prefix"
           $env:MINGW_PREFIX = "/$prefix"
 
-          & $rubyExe -S gem install rake pkg-config native-package-installer --no-document
+          & $gemExe install rake pkg-config native-package-installer --no-document
           if ($LASTEXITCODE -ne 0) {
             Write-Error "GTK3 suite build failed: prerequisite gems could not install."
             exit $LASTEXITCODE
@@ -594,7 +602,7 @@ jobs:
               }
 
               Push-Location (Join-Path $env:GITHUB_WORKSPACE 'gems\gobject-introspection')
-              & $rubyExe -S gem build gobject-introspection.gemspec
+              & $gemExe build gobject-introspection.gemspec
               if ($LASTEXITCODE -ne 0) {
                 Pop-Location
                 Write-Error "GTK3 suite build failed: could not rebuild gobject-introspection with bundled GI runtime assets."
@@ -613,7 +621,7 @@ jobs:
               exit 1
             }
 
-            & $rubyExe -S gem install $builtGem.FullName --local --no-document --force
+            & $gemExe install $builtGem.FullName --local --no-document --force
             if ($LASTEXITCODE -ne 0) {
               Write-Error "GTK3 suite build failed: local install failed for $($builtGem.Name)."
               exit $LASTEXITCODE
@@ -630,10 +638,11 @@ jobs:
           $prefix = $env:MSYS2_PREFIX
           $rubyRoot = $env:RUBY_ROOT
           $rubyExe = $env:RUBY_EXE
+          $gemExe = $env:GEM_EXE
           $env:Path = "$rubyRoot\bin;$msys\$prefix\bin;$msys\usr\bin;$env:Path"
 
           Write-Host "::group::Local GTK3 suite gems"
-          & $rubyExe -S gem list glib2 gobject-introspection gio2 cairo cairo-gobject pango gdk_pixbuf2 atk gdk3 gtk3
+          & $gemExe list glib2 gobject-introspection gio2 cairo cairo-gobject pango gdk_pixbuf2 atk gdk3 gtk3
           Write-Host "::endgroup::"
 
           & $rubyExe -e "require 'glib2'; require 'gtk3'; Gtk.init; puts 'Ruby4 GTK3 suite smoke OK'"
