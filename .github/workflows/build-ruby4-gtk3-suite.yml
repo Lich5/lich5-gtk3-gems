@@ -407,15 +407,10 @@ jobs:
             $preserve = Join-Path $work "preserve-$gemName"
             New-Item -ItemType Directory -Path $preserve -Force | Out-Null
             Copy-Item (Join-Path $target "$gemName.gemspec") $preserve -Force
-            Copy-Item (Join-Path $target '.upstream-version') $preserve -Force
-            if (Test-Path (Join-Path $target 'lib')) {
-              Copy-Item (Join-Path $target 'lib') (Join-Path $preserve 'lib') -Recurse -Force
-            }
 
             Remove-Item $target -Recurse -Force
             Copy-Item $source $target -Recurse -Force
             Copy-Item (Join-Path $preserve "$gemName.gemspec") $target -Force
-            Copy-Item (Join-Path $preserve 'lib') $target -Recurse -Force
             Set-Content -Path (Join-Path $target '.upstream-version') -Value $rubyGnomeVersion -Encoding ascii
           }
 
@@ -423,13 +418,10 @@ jobs:
           $cairoPreserve = Join-Path $work 'preserve-cairo'
           New-Item -ItemType Directory -Path $cairoPreserve -Force | Out-Null
           Copy-Item (Join-Path $cairoTarget 'cairo.gemspec') $cairoPreserve -Force
-          Copy-Item (Join-Path $cairoTarget '.upstream-version') $cairoPreserve -Force
-          Copy-Item (Join-Path $cairoTarget 'lib\cairo.rb') $cairoPreserve -Force
 
           Remove-Item $cairoTarget -Recurse -Force
           Copy-Item $cairoRoot $cairoTarget -Recurse -Force
           Copy-Item (Join-Path $cairoPreserve 'cairo.gemspec') $cairoTarget -Force
-          Copy-Item (Join-Path $cairoPreserve 'cairo.rb') (Join-Path $cairoTarget 'lib\cairo.rb') -Force
           Set-Content -Path (Join-Path $cairoTarget '.upstream-version') -Value $cairoVersion -Encoding ascii
 
           $cairoGemspec = Join-Path $cairoTarget 'cairo.gemspec'
@@ -437,6 +429,35 @@ jobs:
           $cairoSpec = $cairoSpec.Replace('1.18.4', $cairoVersion)
           $cairoSpec = $cairoSpec.Replace('= 4.3.4', "= $rubyGnomeVersion")
           Set-Content -Path $cairoGemspec -Value $cairoSpec -Encoding ascii
+
+      - name: Assert clean Ruby4 UCRT source refresh
+        shell: powershell
+        run: |
+          $repoGems = Join-Path $env:GITHUB_WORKSPACE 'gems'
+          $staleNames = @(
+            'Makefile',
+            'mkmf.log',
+            'glib-enum-types.c',
+            'glib-enum-types.h',
+            'gobject-introspection-enum-types.c',
+            'gobject-introspection-enum-types.h'
+          )
+          $staleExtensions = @('.o', '.so', '.dll')
+          $stale = @(Get-ChildItem -Path $repoGems -Recurse -File |
+            Where-Object {
+              $_.FullName -like '*\ext\*' -and
+              ($staleNames -contains $_.Name -or $staleExtensions -contains $_.Extension)
+            } |
+            Sort-Object FullName -Unique)
+          if ($stale.Count -gt 0) {
+            Write-Host "::group::Stale generated/native files"
+            $stale | ForEach-Object { Write-Host $_.FullName }
+            Write-Host "::endgroup::"
+            Write-Error "Clean source assertion failed: generated native build files are present before the Ruby4 UCRT build."
+            exit 1
+          }
+
+          Write-Host "Ruby4 UCRT source refresh is clean: upstream lib trees are in use and no generated native files are present."
 
       - name: Report vendored source versions
         shell: powershell
@@ -496,6 +517,12 @@ jobs:
           $env:MSYSTEM_PREFIX = "/$prefix"
           $env:MINGW_PREFIX = "/$prefix"
 
+          $pkgDir = Join-Path $env:GITHUB_WORKSPACE 'pkg'
+          if (Test-Path $pkgDir) {
+            Remove-Item $pkgDir -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $pkgDir -Force | Out-Null
+
           & $gemExe install rake pkg-config native-package-installer
           if ($LASTEXITCODE -ne 0) {
             Write-Error "GTK3 suite build failed: prerequisite gems could not install."
@@ -528,6 +555,25 @@ jobs:
 
           foreach ($gemName in $gems) {
             Write-Host "::group::Build $gemName"
+            $extDir = Join-Path $env:GITHUB_WORKSPACE "gems\$gemName\ext\$gemName"
+            if (Test-Path $extDir) {
+              @(
+                'Makefile',
+                'mkmf.log',
+                'glib-enum-types.c',
+                'glib-enum-types.h',
+                'gobject-introspection-enum-types.c',
+                'gobject-introspection-enum-types.h'
+              ) | ForEach-Object {
+                $path = Join-Path $extDir $_
+                if (Test-Path $path) {
+                  Remove-Item $path -Force
+                }
+              }
+              Get-ChildItem -Path $extDir -Recurse -File |
+                Where-Object { $_.Extension -in @('.o', '.so', '.dll') } |
+                Remove-Item -Force
+            }
             & $rubyExe -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('$gemName')"
             if ($LASTEXITCODE -ne 0) {
               Write-Error "GTK3 suite build failed while building $gemName."
