@@ -808,8 +808,8 @@ jobs:
           Write-Host "::endgroup::"
 
           $cacheRoots = @(
-            Join-Path $rubyRoot 'lib\ruby\gems\4.0.0\cache',
-            Join-Path $env:USERPROFILE '.local\share\gem\ruby\4.0.0\cache'
+            (Join-Path $rubyRoot 'lib\ruby\gems\4.0.0\cache')
+            (Join-Path $env:USERPROFILE '.local\share\gem\ruby\4.0.0\cache')
           ) | Where-Object { Test-Path $_ } | Sort-Object -Unique
 
           if ($cacheRoots.Count -eq 0) {
