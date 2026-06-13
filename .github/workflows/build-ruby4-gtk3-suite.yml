@@ -50,11 +50,11 @@ on:
       lich-runtime-gems:
         description: "Whitespace or comma separated runtime gems to add when dependency-closure-source=explicit-list."
         required: false
-        default: "red-colors sqlite3 ox nokogiri mechanize"
+        default: "red-colors sqlite3 ox nokogiri mechanize ascii_charts concurrent-ruby ffi kramdown mini_portile2 os redis redis-client sequel set terminal-table tzinfo tzinfo-data unicode-display_width unicode-emoji curses"
       lich-native-runtime-gems:
         description: "Whitespace or comma separated Lich runtime gems that must resolve to binary platform gems."
         required: false
-        default: "sqlite3 ox nokogiri"
+        default: "sqlite3 ox nokogiri ffi curses"
 
 permissions:
   contents: read
@@ -302,6 +302,18 @@ jobs:
             "$packagePrefix-gtk3",
             "make"
           )
+          $optionalPackages = @(
+            "$packagePrefix-pdcurses",
+            "$packagePrefix-ncurses"
+          )
+          foreach ($optionalPackage in $optionalPackages) {
+            & $pacman -Si $optionalPackage *> $null
+            if ($LASTEXITCODE -eq 0) {
+              $packages += $optionalPackage
+            } else {
+              Write-Host "::notice::Optional native build package $optionalPackage is not available in this MSYS2 package universe."
+            }
+          }
           & $pacman -S --needed --noconfirm @packages
           if ($LASTEXITCODE -ne 0) {
             Write-Error "MSYS2 install failed: pacman could not install the GTK3 native build surface."
@@ -667,6 +679,17 @@ jobs:
               Copy-Item "$msys\$prefix\lib\girepository-1.0\*.typelib" $typelibDst -Force
 
               $dlls = @(
+                'libgirepository-1.0-1.dll',
+                'libgirepository-2.0-0.dll',
+                'libglib-2.0-0.dll',
+                'libgobject-2.0-0.dll',
+                'libgio-2.0-0.dll',
+                'libgmodule-2.0-0.dll',
+                'libffi-8.dll',
+                'libintl-8.dll',
+                'libiconv-2.dll',
+                'libpcre2-8-0.dll',
+                'zlib1.dll',
                 'libatk-1.0-0.dll',
                 'libgdk_pixbuf-2.0-0.dll',
                 'libpango-1.0-0.dll',
@@ -784,7 +807,7 @@ jobs:
               Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
               Sort-Object -Unique
           )
-          $nativeRuntimeRepackGems = @('ox')
+          $nativeRuntimeRepackGems = @('ox', 'curses')
           if ($runtimeGems.Count -eq 0) {
             Write-Error "Lich runtime gem closure failed: no gems were selected."
             exit 1
@@ -947,11 +970,64 @@ jobs:
           $gemExe = $env:GEM_EXE
           $env:Path = "$rubyRoot\bin;$msys\$prefix\bin;$msys\usr\bin;$env:Path"
 
+          $giGemDir = & $rubyExe -e "require 'rubygems'; print Gem::Specification.find_by_name('gobject-introspection').full_gem_path"
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($giGemDir)) {
+            Write-Error "Ruby4 GTK3/Lich runtime smoke failed: could not resolve installed gobject-introspection gem path."
+            exit 1
+          }
+          $giVendorBin = Join-Path $giGemDir 'vendor\local\bin'
+          $giVendorTypelib = Join-Path $giGemDir 'vendor\local\lib\girepository-1.0'
+          $giRuntimeDlls = @(Get-ChildItem -Path $giVendorBin -Filter 'libgirepository*.dll' -File -ErrorAction SilentlyContinue)
+          if ($giRuntimeDlls.Count -eq 0) {
+            Write-Error "Ruby4 GTK3/Lich runtime smoke failed: expected bundled GI runtime DLL missing under $giVendorBin."
+            exit 1
+          }
+          $env:Path = "$giVendorBin;$env:Path"
+          if (Test-Path $giVendorTypelib) {
+            $env:GI_TYPELIB_PATH = $giVendorTypelib
+          }
+
           Write-Host "::group::Local GTK3 suite gems"
-          & $gemExe list glib2 gobject-introspection gio2 cairo cairo-gobject pango gdk_pixbuf2 atk gdk3 gtk3 red-colors sqlite3 ox nokogiri mechanize
+          foreach ($gemName in @(
+            'glib2',
+            'gobject-introspection',
+            'gio2',
+            'cairo',
+            'cairo-gobject',
+            'pango',
+            'gdk_pixbuf2',
+            'atk',
+            'gdk3',
+            'gtk3',
+            'red-colors',
+            'sqlite3',
+            'ox',
+            'nokogiri',
+            'mechanize',
+            'ascii_charts',
+            'concurrent-ruby',
+            'ffi',
+            'kramdown',
+            'mini_portile2',
+            'os',
+            'redis',
+            'redis-client',
+            'sequel',
+            'set',
+            'terminal-table',
+            'tzinfo',
+            'tzinfo-data',
+            'unicode-display_width',
+            'unicode-emoji',
+            'curses'
+          )) {
+            & $gemExe list $gemName
+          }
+          Write-Host "GI vendor bin: $giVendorBin"
+          Write-Host "GI_TYPELIB_PATH=$env:GI_TYPELIB_PATH"
           Write-Host "::endgroup::"
 
-          & $rubyExe -e "require 'sqlite3'; require 'ox'; require 'glib2'; require 'gtk3'; Gtk.init; puts 'Ruby4 GTK3/Lich runtime smoke OK'"
+          & $rubyExe -e "require 'sqlite3'; require 'ox'; require 'ffi'; require 'ascii_charts'; require 'kramdown'; require 'redis'; require 'sequel'; require 'terminal-table'; require 'tzinfo'; require 'curses'; require 'glib2'; require 'gtk3'; Gtk.init; puts 'Ruby4 GTK3/Lich runtime smoke OK'"
           if ($LASTEXITCODE -ne 0) {
             Write-Error "Ruby4 GTK3/Lich runtime smoke failed."
             exit $LASTEXITCODE
