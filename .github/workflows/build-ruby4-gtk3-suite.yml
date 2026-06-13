@@ -844,7 +844,9 @@ jobs:
               'puts spec.version'
             ) -join "`n"
 
-            $metadata = @(& $rubyExe -e $repackScript $gemName)
+            $repackScriptPath = Join-Path $env:RUNNER_TEMP "repack-$gemName.rb"
+            Set-Content -Path $repackScriptPath -Value $repackScript -Encoding ascii
+            $metadata = @(& $rubyExe $repackScriptPath $gemName)
             if ($LASTEXITCODE -ne 0 -or $metadata.Count -lt 2) {
               Write-Error "Lich runtime gem closure failed: native repack preparation failed for $gemName."
               exit 1
