@@ -1,0 +1,651 @@
+name: Build Ruby4 GTK3 Suite
+
+on:
+  workflow_dispatch:
+    inputs:
+      msys-source:
+        description: "Use the current latest MSYS2 base archive or a dated archive."
+        required: false
+        default: "current"
+        type: choice
+        options:
+          - "current"
+          - "dated"
+      snapshot-date:
+        description: "MSYS2 base archive date for msys-source=dated, for example 20250830."
+        required: false
+        default: "20250830"
+      ruby-installer-version:
+        description: "RubyInstaller UCRT archive version, for example 4.0.5-1."
+        required: false
+        default: "4.0.5-1"
+      ruby-gnome-version:
+        description: "Ruby-GNOME suite version to build."
+        required: false
+        default: "4.3.6"
+      cairo-version:
+        description: "rcairo version to build."
+        required: false
+        default: "1.18.5"
+      glib2-gc-repair:
+        description: "Optional glib2 patch for Ruby-defined GObject property retention."
+        required: false
+        default: "cache-ruby-property-setter-values"
+        type: choice
+        options:
+          - "cache-ruby-property-setter-values"
+          - "none"
+
+permissions:
+  contents: read
+
+jobs:
+  build_ruby4_gtk3_suite:
+    name: Build Ruby4 GTK3 suite (windows-ucrt64)
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    env:
+      PLATFORM_LANE: windows-ucrt64
+      MSYSTEM: UCRT64
+      MSYS2_PREFIX: ucrt64
+      MSYS2_PACKAGE_PREFIX: mingw-w64-ucrt-x86_64
+      GEM_PLATFORM: x64-mingw-ucrt
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate inputs
+        shell: powershell
+        run: |
+          $msysSource = '${{ inputs.msys-source }}'
+          $snapshotDate = '${{ inputs.snapshot-date }}'
+          $rubyInstallerVersion = '${{ inputs.ruby-installer-version }}'
+          $rubyGnomeVersion = '${{ inputs.ruby-gnome-version }}'
+          $cairoVersion = '${{ inputs.cairo-version }}'
+          $glib2GcRepair = '${{ inputs.glib2-gc-repair }}'
+
+          if ($msysSource -notin @('current', 'dated')) {
+            Write-Error "msys-source must be 'current' or 'dated'; received '$msysSource'."
+            exit 1
+          }
+          if ($snapshotDate -notmatch '^\d{8}$') {
+            Write-Error "snapshot-date must be YYYYMMDD, for example 20250830; received '$snapshotDate'."
+            exit 1
+          }
+          if ($rubyInstallerVersion -notmatch '^\d+\.\d+\.\d+-\d+$') {
+            Write-Error "ruby-installer-version must look like N.N.N-N, for example 4.0.5-1; received '$rubyInstallerVersion'."
+            exit 1
+          }
+          if ($rubyGnomeVersion -notmatch '^\d+\.\d+\.\d+$') {
+            Write-Error "ruby-gnome-version must look like N.N.N; received '$rubyGnomeVersion'."
+            exit 1
+          }
+          if ($cairoVersion -notmatch '^\d+\.\d+\.\d+$') {
+            Write-Error "cairo-version must look like N.N.N; received '$cairoVersion'."
+            exit 1
+          }
+          if ($glib2GcRepair -notin @('cache-ruby-property-setter-values', 'none')) {
+            Write-Error "glib2-gc-repair must be 'cache-ruby-property-setter-values' or 'none'; received '$glib2GcRepair'."
+            exit 1
+          }
+
+          "MSYS2_SOURCE=$msysSource" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "MSYS2_SNAPSHOT_DATE=$snapshotDate" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "RUBY_INSTALLER_VERSION=$rubyInstallerVersion" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "RUBY_GNOME_VERSION=$rubyGnomeVersion" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "CAIRO_VERSION=$cairoVersion" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "GLIB2_GC_REPAIR=$glib2GcRepair" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Download and extract MSYS2 base archive
+        shell: powershell
+        run: |
+          $snapshotDate = $env:MSYS2_SNAPSHOT_DATE
+          $msysSource = $env:MSYS2_SOURCE
+          $msysParent = 'C:\Ruby4Lich5'
+          $msys = Join-Path $msysParent 'msys64'
+          $distribUrl = 'https://repo.msys2.org/distrib/x86_64/'
+
+          if ($msysSource -eq 'current') {
+            Write-Host "Resolving newest MSYS2 base archive from $distribUrl"
+            $index = Invoke-WebRequest -Uri $distribUrl -UseBasicParsing
+            $archiveName = @(
+              [regex]::Matches($index.Content, 'msys2-base-x86_64-\d{8}\.tar\.zst') |
+                ForEach-Object { $_.Value } |
+                Sort-Object -Unique -Descending
+            ) | Select-Object -First 1
+            if (-not $archiveName) {
+              Write-Error "MSYS2 current archive resolution failed: no dated msys2-base-x86_64-YYYYMMDD.tar.zst entries found at $distribUrl."
+              exit 1
+            }
+          } else {
+            $archiveName = "msys2-base-x86_64-$snapshotDate.tar.zst"
+          }
+
+          $archive = Join-Path $env:RUNNER_TEMP $archiveName
+          $url = "$distribUrl$archiveName"
+          if (Test-Path $msysParent) {
+            Remove-Item $msysParent -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $msysParent -Force | Out-Null
+
+          Write-Host "Resolved MSYS2 archive: $archiveName"
+          Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing
+          if (!(Test-Path $archive)) {
+            Write-Error "MSYS2 download failed: expected archive $archive was not created."
+            exit 1
+          }
+
+          $sevenZip = "${env:ProgramFiles}\7-Zip\7z.exe"
+          if (!(Test-Path $sevenZip)) {
+            $sevenZip = '7z.exe'
+          }
+
+          $extractWork = Join-Path $env:RUNNER_TEMP "msys2-base-$msysSource-$snapshotDate"
+          if (Test-Path $extractWork) {
+            Remove-Item $extractWork -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $extractWork -Force | Out-Null
+
+          & $sevenZip x $archive "-o$extractWork" -y
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "MSYS2 zstd extraction failed."
+            exit $LASTEXITCODE
+          }
+
+          $tarFile = Get-ChildItem $extractWork -Filter '*.tar' -File | Select-Object -First 1
+          if (-not $tarFile) {
+            Write-Error "MSYS2 extraction failed: no .tar file found after zstd extraction."
+            exit 1
+          }
+
+          & $sevenZip x $tarFile.FullName "-o$msysParent" -y
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "MSYS2 tar extraction failed."
+            exit $LASTEXITCODE
+          }
+
+          if (!(Test-Path (Join-Path $msys 'usr\bin\pacman.exe'))) {
+            Write-Error "MSYS2 base extraction failed: pacman.exe not found under $msys."
+            exit 1
+          }
+
+          "MSYS2_ROOT=$msys" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build sanitized PATH
+        id: lanepath
+        shell: powershell
+        run: |
+          $msys = $env:MSYS2_ROOT
+          $prefix = $env:MSYS2_PREFIX
+          if (!(Test-Path $msys)) {
+            Write-Error "Cannot build PATH because MSYS2_ROOT does not exist: $msys"
+            exit 1
+          }
+
+          $orig = $env:Path -split ';'
+          $filtered = $orig | Where-Object {
+            $_ -and
+            ($_ -notlike '*\Ruby\*\x64\msys64\*') -and
+            ($_ -notmatch '^C:\\hostedtoolcache\\windows\\Ruby(\\|$)') -and
+            ($_ -ne 'C:\mingw64\bin') -and
+            ($_ -notmatch '^C:\\Strawberry(\\|$)')
+          }
+          $lanePath = @("$msys\$prefix\bin", "$msys\usr\bin") + $filtered
+          $joined = ($lanePath -join ';')
+
+          "PATH_GTK3_SUITE=$joined" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "path=$joined" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "RI_DEVKIT=$msys" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "MSYSTEM_PREFIX=/$prefix" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "MINGW_PREFIX=/$prefix" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Initialize MSYS2 keyring
+        shell: powershell
+        env:
+          PATH: ${{ steps.lanepath.outputs.path }}
+        run: |
+          $msys = $env:MSYS2_ROOT
+          $env:Path = "$msys\$env:MSYS2_PREFIX\bin;$msys\usr\bin;$env:Path"
+          $bash = Join-Path $msys 'usr\bin\bash.exe'
+          if (!(Test-Path $bash)) {
+            Write-Error "MSYS2 keyring initialization failed: bash.exe not found at $bash."
+            exit 1
+          }
+
+          & $bash -lc 'pacman-key --init'
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "MSYS2 keyring initialization failed: pacman-key --init exited with $LASTEXITCODE."
+            exit $LASTEXITCODE
+          }
+
+          & $bash -lc 'pacman-key --populate msys2'
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "MSYS2 keyring initialization failed: pacman-key --populate msys2 exited with $LASTEXITCODE."
+            exit $LASTEXITCODE
+          }
+
+      - name: Refresh current MSYS2 package universe
+        if: ${{ inputs.msys-source == 'current' }}
+        shell: powershell
+        env:
+          PATH: ${{ steps.lanepath.outputs.path }}
+        run: |
+          $msys = $env:MSYS2_ROOT
+          $env:Path = "$msys\$env:MSYS2_PREFIX\bin;$msys\usr\bin;$env:Path"
+          $bash = Join-Path $msys 'usr\bin\bash.exe'
+          & $bash -lc 'pacman -Syu --noconfirm'
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Current MSYS2 refresh failed: pacman -Syu exited with $LASTEXITCODE."
+            exit $LASTEXITCODE
+          }
+
+      - name: Install GTK3 native build surface
+        shell: powershell
+        env:
+          PATH: ${{ steps.lanepath.outputs.path }}
+        run: |
+          $msys = $env:MSYS2_ROOT
+          $prefix = $env:MSYS2_PREFIX
+          $packagePrefix = $env:MSYS2_PACKAGE_PREFIX
+          $pacman = Join-Path $msys 'usr\bin\pacman.exe'
+          $env:Path = "$msys\$prefix\bin;$msys\usr\bin;$env:Path"
+
+          $packages = @(
+            "$packagePrefix-gcc",
+            "$packagePrefix-gcc-libs",
+            "$packagePrefix-make",
+            "$packagePrefix-pkgconf",
+            "$packagePrefix-gobject-introspection",
+            "$packagePrefix-gobject-introspection-runtime",
+            "$packagePrefix-gtk3",
+            "make"
+          )
+          & $pacman -S --needed --noconfirm @packages
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "MSYS2 install failed: pacman could not install the GTK3 native build surface."
+            exit $LASTEXITCODE
+          }
+
+          Write-Host "::group::Installed package versions"
+          & $pacman -Q
+          Write-Host "::endgroup::"
+
+          $gcc = Join-Path $msys "$prefix\bin\gcc.exe"
+          $pkgc = Join-Path $msys "$prefix\bin\pkg-config.exe"
+          "CC=$gcc" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "PKG_CONFIG=$pkgc" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "PKG_CONFIG_PATH=$msys\$prefix\lib\pkgconfig;$msys\lib\pkgconfig" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Download and extract RubyInstaller
+        shell: powershell
+        run: |
+          $rubyInstallerVersion = $env:RUBY_INSTALLER_VERSION
+          $rubyParent = 'C:\Ruby4Lich5\ruby'
+          $archive = Join-Path $env:RUNNER_TEMP "rubyinstaller-$rubyInstallerVersion-x64.7z"
+          $url = "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-$rubyInstallerVersion/rubyinstaller-$rubyInstallerVersion-x64.7z"
+
+          if (Test-Path $rubyParent) {
+            Remove-Item $rubyParent -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $rubyParent -Force | Out-Null
+
+          Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing
+          if (!(Test-Path $archive)) {
+            Write-Error "RubyInstaller download failed: expected archive $archive was not created."
+            exit 1
+          }
+
+          $sevenZip = "${env:ProgramFiles}\7-Zip\7z.exe"
+          if (!(Test-Path $sevenZip)) {
+            $sevenZip = '7z.exe'
+          }
+
+          & $sevenZip x $archive "-o$rubyParent" -y
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "RubyInstaller extraction failed."
+            exit $LASTEXITCODE
+          }
+
+          $rubyExe = Get-ChildItem $rubyParent -Recurse -Filter ruby.exe -File | Where-Object {
+            $_.FullName -match '\\bin\\ruby\.exe$'
+          } | Select-Object -First 1
+          if (-not $rubyExe) {
+            Write-Error "RubyInstaller extraction failed: ruby.exe was not found under $rubyParent."
+            exit 1
+          }
+
+          $rubyRoot = Split-Path (Split-Path $rubyExe.FullName -Parent) -Parent
+          & $rubyExe.FullName --version
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "RubyInstaller validation failed: ruby.exe could not run."
+            exit $LASTEXITCODE
+          }
+
+          $rubyPlatform = & $rubyExe.FullName -e "require 'rubygems'; print Gem::Platform.local.to_s"
+          if ($rubyPlatform -ne $env:GEM_PLATFORM) {
+            Write-Error "RubyInstaller validation failed: expected Ruby platform $env:GEM_PLATFORM, got $rubyPlatform."
+            exit 1
+          }
+
+          "RUBY_ROOT=$rubyRoot" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "RUBY_EXE=$($rubyExe.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Refresh suite sources to requested versions
+        shell: powershell
+        run: |
+          $rubyGnomeVersion = $env:RUBY_GNOME_VERSION
+          $cairoVersion = $env:CAIRO_VERSION
+          $repoGems = Join-Path $env:GITHUB_WORKSPACE 'gems'
+          $work = Join-Path $env:RUNNER_TEMP 'source-refresh'
+          if (Test-Path $work) {
+            Remove-Item $work -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $work -Force | Out-Null
+
+          $rubyGnomeZip = Join-Path $work "ruby-gnome-$rubyGnomeVersion.zip"
+          $rubyGnomeUrl = "https://github.com/ruby-gnome/ruby-gnome/archive/refs/tags/$rubyGnomeVersion.zip"
+          Write-Host "Downloading Ruby-GNOME $rubyGnomeVersion from $rubyGnomeUrl"
+          Invoke-WebRequest -Uri $rubyGnomeUrl -OutFile $rubyGnomeZip -UseBasicParsing
+          Expand-Archive -Path $rubyGnomeZip -DestinationPath $work -Force
+          $rubyGnomeRoot = Join-Path $work "ruby-gnome-$rubyGnomeVersion"
+          if (!(Test-Path $rubyGnomeRoot)) {
+            Write-Error "Source refresh failed: Ruby-GNOME source did not expand to $rubyGnomeRoot."
+            exit 1
+          }
+
+          Push-Location $work
+          & $env:RUBY_EXE -S gem fetch cairo --version $cairoVersion --clear-sources --source https://rubygems.org --no-document
+          $fetchExit = $LASTEXITCODE
+          Pop-Location
+          $cairoGem = Join-Path $work "cairo-$cairoVersion.gem"
+          if ($fetchExit -ne 0 -or !(Test-Path $cairoGem)) {
+            Write-Error "Source refresh failed: cairo $cairoVersion gem could not be fetched."
+            exit 1
+          }
+          Push-Location $work
+          & $env:RUBY_EXE -S gem unpack $cairoGem
+          if ($LASTEXITCODE -ne 0) {
+            Pop-Location
+            Write-Error "Source refresh failed: cairo $cairoVersion gem could not be unpacked."
+            exit $LASTEXITCODE
+          }
+          Pop-Location
+          $cairoRoot = Join-Path $work "cairo-$cairoVersion"
+          if (!(Test-Path $cairoRoot)) {
+            Write-Error "Source refresh failed: cairo source did not unpack to $cairoRoot."
+            exit 1
+          }
+
+          $rubyGnomeGems = @(
+            'glib2',
+            'gobject-introspection',
+            'gio2',
+            'cairo-gobject',
+            'pango',
+            'gdk_pixbuf2',
+            'atk',
+            'gdk3',
+            'gtk3'
+          )
+
+          foreach ($gemName in $rubyGnomeGems) {
+            $target = Join-Path $repoGems $gemName
+            $source = Join-Path $rubyGnomeRoot $gemName
+            if (!(Test-Path $source)) {
+              Write-Error "Source refresh failed: missing Ruby-GNOME source directory $source."
+              exit 1
+            }
+            $preserve = Join-Path $work "preserve-$gemName"
+            New-Item -ItemType Directory -Path $preserve -Force | Out-Null
+            Copy-Item (Join-Path $target "$gemName.gemspec") $preserve -Force
+            Copy-Item (Join-Path $target '.upstream-version') $preserve -Force
+            if (Test-Path (Join-Path $target 'lib')) {
+              Copy-Item (Join-Path $target 'lib') (Join-Path $preserve 'lib') -Recurse -Force
+            }
+
+            Remove-Item $target -Recurse -Force
+            Copy-Item $source $target -Recurse -Force
+            Copy-Item (Join-Path $preserve "$gemName.gemspec") $target -Force
+            Copy-Item (Join-Path $preserve 'lib') $target -Recurse -Force
+            Set-Content -Path (Join-Path $target '.upstream-version') -Value $rubyGnomeVersion -Encoding ascii
+          }
+
+          $cairoTarget = Join-Path $repoGems 'cairo'
+          $cairoPreserve = Join-Path $work 'preserve-cairo'
+          New-Item -ItemType Directory -Path $cairoPreserve -Force | Out-Null
+          Copy-Item (Join-Path $cairoTarget 'cairo.gemspec') $cairoPreserve -Force
+          Copy-Item (Join-Path $cairoTarget '.upstream-version') $cairoPreserve -Force
+          Copy-Item (Join-Path $cairoTarget 'lib\cairo.rb') $cairoPreserve -Force
+
+          Remove-Item $cairoTarget -Recurse -Force
+          Copy-Item $cairoRoot $cairoTarget -Recurse -Force
+          Copy-Item (Join-Path $cairoPreserve 'cairo.gemspec') $cairoTarget -Force
+          Copy-Item (Join-Path $cairoPreserve 'cairo.rb') (Join-Path $cairoTarget 'lib\cairo.rb') -Force
+          Set-Content -Path (Join-Path $cairoTarget '.upstream-version') -Value $cairoVersion -Encoding ascii
+
+          $cairoGemspec = Join-Path $cairoTarget 'cairo.gemspec'
+          $cairoSpec = Get-Content $cairoGemspec -Raw
+          $cairoSpec = $cairoSpec.Replace('1.18.4', $cairoVersion)
+          $cairoSpec = $cairoSpec.Replace('= 4.3.4', "= $rubyGnomeVersion")
+          Set-Content -Path $cairoGemspec -Value $cairoSpec -Encoding ascii
+
+      - name: Report vendored source versions
+        shell: powershell
+        run: |
+          Write-Host "::group::Vendored source versions"
+          Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE 'gems') -Filter '.upstream-version' -Recurse |
+            Sort-Object FullName |
+            ForEach-Object {
+              $gemName = Split-Path $_.DirectoryName -Leaf
+              $version = (Get-Content $_.FullName -Raw).Trim()
+              Write-Host "$gemName $version"
+            }
+          Write-Host "::endgroup::"
+
+      - name: Patch glib2 GC repair
+        if: ${{ inputs.glib2-gc-repair == 'cache-ruby-property-setter-values' }}
+        shell: powershell
+        run: |
+          $objectSource = Join-Path $env:GITHUB_WORKSPACE 'gems\glib2\ext\glib2\rbgobj_object.c'
+          if (!(Test-Path $objectSource)) {
+            Write-Error "glib2 patch failed: source not found at $objectSource."
+            exit 1
+          }
+
+          $old = '    rb_funcall(GOBJ2RVAL(object), ruby_setter, 1, GVAL2RVAL(value));'
+          $new = @(
+            '    {',
+            '        VALUE rb_object = GOBJ2RVAL(object);',
+            '        VALUE rb_value = GVAL2RVAL(value);',
+            '        rb_funcall(rb_object, ruby_setter, 1, rb_value);',
+            '        if (G_TYPE_IS_OBJECT(G_PARAM_SPEC_VALUE_TYPE(pspec))) {',
+            '            G_CHILD_SET(rb_object, rb_intern(g_param_spec_get_name(pspec)), rb_value);',
+            '        }',
+            '    }'
+          ) -join "`n"
+          $content = Get-Content $objectSource -Raw
+          if (-not $content.Contains($old)) {
+            Write-Error "glib2 patch failed: patch anchor was not found in $objectSource."
+            exit 1
+          }
+          Set-Content -Path $objectSource -Value $content.Replace($old, $new.TrimEnd()) -Encoding ascii
+          Write-Host "Applied glib2 GC repair patch to $objectSource"
+
+      - name: Build local GTK3 gem suite
+        shell: powershell
+        env:
+          BINARY_GEM: "true"
+          PATH: ${{ steps.lanepath.outputs.path }}
+        run: |
+          $msys = $env:MSYS2_ROOT
+          $prefix = $env:MSYS2_PREFIX
+          $rubyRoot = $env:RUBY_ROOT
+          $rubyExe = $env:RUBY_EXE
+          $env:Path = "$rubyRoot\bin;$msys\$prefix\bin;$msys\usr\bin;$env:Path"
+          $env:RI_DEVKIT = $msys
+          $env:MSYSTEM_PREFIX = "/$prefix"
+          $env:MINGW_PREFIX = "/$prefix"
+
+          & $rubyExe -S gem install rake pkg-config native-package-installer --no-document
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "GTK3 suite build failed: prerequisite gems could not install."
+            exit $LASTEXITCODE
+          }
+
+          Write-Host "::group::GTK3 suite build surface"
+          Write-Host "RUBY_ROOT=$rubyRoot"
+          Write-Host "GEM_PLATFORM=$env:GEM_PLATFORM"
+          Write-Host "MSYSTEM=$env:MSYSTEM"
+          Write-Host "MSYSTEM_PREFIX=$env:MSYSTEM_PREFIX"
+          Write-Host "MINGW_PREFIX=$env:MINGW_PREFIX"
+          Write-Host "CC=$env:CC"
+          Write-Host "PKG_CONFIG=$env:PKG_CONFIG"
+          & $env:PKG_CONFIG --modversion gtk+-3.0 gobject-introspection-1.0 glib-2.0 cairo pango
+          Write-Host "::endgroup::"
+
+          $gems = @(
+            'glib2',
+            'gobject-introspection',
+            'gio2',
+            'cairo',
+            'cairo-gobject',
+            'pango',
+            'gdk_pixbuf2',
+            'atk',
+            'gdk3',
+            'gtk3'
+          )
+
+          foreach ($gemName in $gems) {
+            Write-Host "::group::Build $gemName"
+            & $rubyExe -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('$gemName')"
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "GTK3 suite build failed while building $gemName."
+              exit $LASTEXITCODE
+            }
+
+            if ($gemName -eq 'gobject-introspection') {
+              $giVendor = Join-Path $env:GITHUB_WORKSPACE 'gems\gobject-introspection\vendor\local'
+              $typelibDst = Join-Path $giVendor 'lib\girepository-1.0'
+              $binDst = Join-Path $giVendor 'bin'
+              $fontDst = Join-Path $giVendor 'etc\fonts'
+              $loaderDst = Join-Path $giVendor 'lib\gdk-pixbuf-2.0\2.10.0\loaders'
+              New-Item -ItemType Directory -Force -Path $typelibDst, $binDst, $fontDst, $loaderDst | Out-Null
+
+              Copy-Item "$msys\$prefix\lib\girepository-1.0\*.typelib" $typelibDst -Force
+
+              $dlls = @(
+                'libatk-1.0-0.dll',
+                'libgdk_pixbuf-2.0-0.dll',
+                'libpango-1.0-0.dll',
+                'libpangocairo-1.0-0.dll',
+                'libpangoft2-1.0-0.dll',
+                'libpangowin32-1.0-0.dll',
+                'libgdk-3-0.dll',
+                'libgtk-3-0.dll',
+                'libcairo-2.dll',
+                'libcairo-gobject-2.dll',
+                'libharfbuzz-0.dll',
+                'libharfbuzz-gobject-0.dll',
+                'libfreetype-6.dll',
+                'libfontconfig-1.dll',
+                'libpixman-1-0.dll',
+                'libpng16-16.dll',
+                'libjpeg-8.dll',
+                'libtiff-6.dll',
+                'libepoxy-0.dll',
+                'libfribidi-0.dll',
+                'libthai-0.dll',
+                'libdatrie-1.dll',
+                'librsvg-2-2.dll',
+                'libxml2-2.dll',
+                'libwebp-7.dll',
+                'libsharpyuv-0.dll',
+                'libdeflate.dll',
+                'libjbig-0.dll',
+                'libLerc.dll'
+              )
+              foreach ($dll in $dlls) {
+                $src = Join-Path $msys "$prefix\bin\$dll"
+                if (Test-Path $src) {
+                  Copy-Item $src $binDst -Force
+                } else {
+                  Write-Host "::warning::$dll not found in $msys\$prefix\bin"
+                }
+              }
+
+              if (Test-Path "$msys\$prefix\etc\fonts\fonts.conf") {
+                Copy-Item "$msys\$prefix\etc\fonts\fonts.conf" $fontDst -Force
+              }
+              if (Test-Path "$msys\$prefix\etc\fonts\conf.d") {
+                Copy-Item "$msys\$prefix\etc\fonts\conf.d" (Join-Path $fontDst 'conf.d') -Recurse -Force
+              }
+
+              $loaderSrc = "$msys\$prefix\lib\gdk-pixbuf-2.0\2.10.0\loaders"
+              if (Test-Path $loaderSrc) {
+                Copy-Item "$loaderSrc\*.dll" $loaderDst -Force
+                $cacheDst = Split-Path $loaderDst -Parent
+                $env:GDK_PIXBUF_MODULEDIR = $loaderDst
+                & "$msys\$prefix\bin\gdk-pixbuf-query-loaders.exe" | Set-Content (Join-Path $cacheDst 'loaders.cache.in')
+                (Get-Content (Join-Path $cacheDst 'loaders.cache.in') -Raw).Replace($loaderDst, '@@MODULEDIR@@') |
+                  Set-Content (Join-Path $cacheDst 'loaders.cache.in') -Encoding ascii
+              }
+
+              Push-Location (Join-Path $env:GITHUB_WORKSPACE 'gems\gobject-introspection')
+              & $rubyExe -S gem build gobject-introspection.gemspec
+              if ($LASTEXITCODE -ne 0) {
+                Pop-Location
+                Write-Error "GTK3 suite build failed: could not rebuild gobject-introspection with bundled GI runtime assets."
+                exit $LASTEXITCODE
+              }
+              $rebuiltGI = Get-ChildItem -Filter 'gobject-introspection-*.gem' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+              Copy-Item $rebuiltGI.FullName (Join-Path $env:GITHUB_WORKSPACE 'pkg') -Force
+              Pop-Location
+            }
+
+            $builtGem = Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE 'pkg') -Filter "$gemName-*.gem" |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1
+            if (-not $builtGem) {
+              Write-Error "GTK3 suite build failed: no local gem artifact found for $gemName."
+              exit 1
+            }
+
+            & $rubyExe -S gem install $builtGem.FullName --local --no-document --force
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "GTK3 suite build failed: local install failed for $($builtGem.Name)."
+              exit $LASTEXITCODE
+            }
+            Write-Host "::endgroup::"
+          }
+
+      - name: Smoke local GTK3 suite
+        shell: powershell
+        env:
+          PATH: ${{ steps.lanepath.outputs.path }}
+        run: |
+          $msys = $env:MSYS2_ROOT
+          $prefix = $env:MSYS2_PREFIX
+          $rubyRoot = $env:RUBY_ROOT
+          $rubyExe = $env:RUBY_EXE
+          $env:Path = "$rubyRoot\bin;$msys\$prefix\bin;$msys\usr\bin;$env:Path"
+
+          Write-Host "::group::Local GTK3 suite gems"
+          & $rubyExe -S gem list glib2 gobject-introspection gio2 cairo cairo-gobject pango gdk_pixbuf2 atk gdk3 gtk3
+          Write-Host "::endgroup::"
+
+          & $rubyExe -e "require 'glib2'; require 'gtk3'; Gtk.init; puts 'Ruby4 GTK3 suite smoke OK'"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Ruby4 GTK3 suite smoke failed."
+            exit $LASTEXITCODE
+          }
+
+      - name: Upload GTK3 suite gems
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruby4-gtk3-suite-windows-ucrt64
+          path: pkg/*.gem
+          retention-days: 90
+          if-no-files-found: error
