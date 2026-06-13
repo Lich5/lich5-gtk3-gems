@@ -397,6 +397,18 @@ jobs:
             'gtk3'
           )
 
+          $binaryLoaderFiles = @{
+            'glib2' = @('lib\glib2.rb')
+            'gobject-introspection' = @(
+              'lib\gobject-introspection.rb',
+              'lib\rubygems_plugin.rb'
+            )
+            'gio2' = @('lib\gio2\loader.rb')
+            'cairo-gobject' = @('lib\cairo-gobject.rb')
+            'pango' = @('lib\pango\loader.rb')
+            'gtk3' = @('lib\gtk3\loader.rb')
+          }
+
           foreach ($gemName in $rubyGnomeGems) {
             $target = Join-Path $repoGems $gemName
             $source = Join-Path $rubyGnomeRoot $gemName
@@ -407,10 +419,30 @@ jobs:
             $preserve = Join-Path $work "preserve-$gemName"
             New-Item -ItemType Directory -Path $preserve -Force | Out-Null
             Copy-Item (Join-Path $target "$gemName.gemspec") $preserve -Force
+            if ($binaryLoaderFiles.ContainsKey($gemName)) {
+              foreach ($relativePath in $binaryLoaderFiles[$gemName]) {
+                $sourceLoader = Join-Path $target $relativePath
+                if (Test-Path $sourceLoader) {
+                  $preservedLoader = Join-Path $preserve $relativePath
+                  New-Item -ItemType Directory -Path (Split-Path $preservedLoader -Parent) -Force | Out-Null
+                  Copy-Item $sourceLoader $preservedLoader -Force
+                }
+              }
+            }
 
             Remove-Item $target -Recurse -Force
             Copy-Item $source $target -Recurse -Force
             Copy-Item (Join-Path $preserve "$gemName.gemspec") $target -Force
+            if ($binaryLoaderFiles.ContainsKey($gemName)) {
+              foreach ($relativePath in $binaryLoaderFiles[$gemName]) {
+                $preservedLoader = Join-Path $preserve $relativePath
+                if (Test-Path $preservedLoader) {
+                  $targetLoader = Join-Path $target $relativePath
+                  New-Item -ItemType Directory -Path (Split-Path $targetLoader -Parent) -Force | Out-Null
+                  Copy-Item $preservedLoader $targetLoader -Force
+                }
+              }
+            }
             Set-Content -Path (Join-Path $target '.upstream-version') -Value $rubyGnomeVersion -Encoding ascii
           }
 
@@ -418,10 +450,12 @@ jobs:
           $cairoPreserve = Join-Path $work 'preserve-cairo'
           New-Item -ItemType Directory -Path $cairoPreserve -Force | Out-Null
           Copy-Item (Join-Path $cairoTarget 'cairo.gemspec') $cairoPreserve -Force
+          Copy-Item (Join-Path $cairoTarget 'lib\cairo.rb') $cairoPreserve -Force
 
           Remove-Item $cairoTarget -Recurse -Force
           Copy-Item $cairoRoot $cairoTarget -Recurse -Force
           Copy-Item (Join-Path $cairoPreserve 'cairo.gemspec') $cairoTarget -Force
+          Copy-Item (Join-Path $cairoPreserve 'cairo.rb') (Join-Path $cairoTarget 'lib\cairo.rb') -Force
           Set-Content -Path (Join-Path $cairoTarget '.upstream-version') -Value $cairoVersion -Encoding ascii
 
           $cairoGemspec = Join-Path $cairoTarget 'cairo.gemspec'
