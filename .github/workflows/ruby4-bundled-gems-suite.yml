@@ -141,6 +141,44 @@ jobs:
           "MSYSTEM_PREFIX=/$prefix" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "MINGW_PREFIX=/$prefix" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Resolve native build surface
+        shell: powershell
+        env:
+          PATH: ${{ steps.lanepath.outputs.path }}
+        run: |
+          $msys = $env:MSYS2_ROOT
+          $prefix = $env:MSYS2_PREFIX
+          $gcc = Join-Path $msys "$prefix\bin\gcc.exe"
+          $make = Join-Path $msys "$prefix\bin\make.exe"
+          $pkgConfig = Join-Path $msys "$prefix\bin\pkg-config.exe"
+          $pkgConfigPath = "$msys\$prefix\lib\pkgconfig;$msys\lib\pkgconfig"
+
+          foreach ($tool in @($gcc, $make, $pkgConfig)) {
+            if (!(Test-Path $tool)) {
+              Write-Error "Native build surface validation failed: expected tool was not found at $tool."
+              exit 1
+            }
+          }
+
+          "CC=$gcc" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "MAKE=$make" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "PKG_CONFIG=$pkgConfig" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "PKG_CONFIG_PATH=$pkgConfigPath" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+          Write-Host "::group::Native build surface"
+          Write-Host "CC=$gcc"
+          Write-Host "MAKE=$make"
+          Write-Host "PKG_CONFIG=$pkgConfig"
+          Write-Host "PKG_CONFIG_PATH=$pkgConfigPath"
+          where.exe gcc
+          where.exe make
+          where.exe pkg-config
+          & $gcc --version
+          & $make --version
+          & $pkgConfig --version
+          & $pkgConfig --modversion gtk+-3.0 gobject-introspection-1.0 glib-2.0 gobject-2.0 gio-2.0 cairo pango
+          Write-Host "::endgroup::"
+
       - name: Download and extract RubyInstaller
         shell: powershell
         run: |
@@ -536,15 +574,57 @@ jobs:
           $env:RI_DEVKIT = $msys
           $env:MSYSTEM_PREFIX = "/$prefix"
           $env:MINGW_PREFIX = "/$prefix"
+          $env:CC = Join-Path $msys "$prefix\bin\gcc.exe"
+          $env:MAKE = Join-Path $msys "$prefix\bin\make.exe"
+          $env:PKG_CONFIG = Join-Path $msys "$prefix\bin\pkg-config.exe"
           $env:PKG_CONFIG_PATH = "$msys\$prefix\lib\pkgconfig;$msys\lib\pkgconfig"
           $env:RCAIRO_SOURCE_DIR = Join-Path $sourceRoot 'cairo'
           $env:BINARY_GEM = 'true'
           $env:KEEP_BUILT_EXTENSIONS = 'true'
 
+          Write-Host "::group::GTK3 native build preflight"
+          Write-Host "RUBY_EXE=$rubyExe"
+          Write-Host "CC=$env:CC"
+          Write-Host "MAKE=$env:MAKE"
+          Write-Host "PKG_CONFIG=$env:PKG_CONFIG"
+          Write-Host "PKG_CONFIG_PATH=$env:PKG_CONFIG_PATH"
+          where.exe ruby
+          where.exe gcc
+          where.exe make
+          where.exe pkg-config
+          & $rubyExe -rrbconfig -e 'puts "RbConfig CC=#{RbConfig::CONFIG[''CC'']}"; puts "RbConfig LDSHARED=#{RbConfig::CONFIG[''LDSHARED'']}"; puts "RbConfig CFLAGS=#{RbConfig::CONFIG[''CFLAGS'']}"'
+          & $env:PKG_CONFIG --modversion gtk+-3.0 gobject-introspection-1.0 glib-2.0 gobject-2.0 gio-2.0 cairo pango
+          Write-Host "::endgroup::"
+
           & $gemExe install rake pkg-config native-package-installer
           if ($LASTEXITCODE -ne 0) {
             Write-Error "Build failed: prerequisite build gems could not install."
             exit $LASTEXITCODE
+          }
+
+          $probeDir = Join-Path $env:RUNNER_TEMP 'ruby4-bundled-gems\mkmf-probe'
+          if (Test-Path $probeDir) {
+            Remove-Item $probeDir -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $probeDir -Force | Out-Null
+          $probeScript = Join-Path $probeDir 'probe.rb'
+          @(
+            'require "mkmf"',
+            'abort("mkmf compile probe failed") unless try_compile("int main(void) { return 0; }")',
+            'puts "mkmf compile probe OK"'
+          ) | Set-Content -Path $probeScript -Encoding ascii
+          Push-Location $probeDir
+          & $rubyExe $probeScript
+          $probeExit = $LASTEXITCODE
+          if ($probeExit -ne 0 -and (Test-Path (Join-Path $probeDir 'mkmf.log'))) {
+            Write-Host "::group::mkmf probe log"
+            Get-Content (Join-Path $probeDir 'mkmf.log') -Raw
+            Write-Host "::endgroup::"
+          }
+          Pop-Location
+          if ($probeExit -ne 0) {
+            Write-Error "Build failed: Ruby mkmf could not compile a trivial executable with the resolved native build surface."
+            exit $probeExit
           }
 
           $objdump = Join-Path $msys "$prefix\bin\objdump.exe"
@@ -553,6 +633,14 @@ jobs:
           function Invoke-Checked([string] $message, [scriptblock] $block) {
             & $block
             if ($LASTEXITCODE -ne 0) {
+              if ($harnessRoot -and (Test-Path $harnessRoot)) {
+                $logs = @(Get-ChildItem -Path $harnessRoot -Recurse -Filter mkmf.log -File -ErrorAction SilentlyContinue)
+                foreach ($log in $logs) {
+                  Write-Host "::group::mkmf log: $($log.FullName)"
+                  Get-Content $log.FullName -Raw
+                  Write-Host "::endgroup::"
+                }
+              }
               Write-Error "$message failed with exit code $LASTEXITCODE."
               exit $LASTEXITCODE
             }
