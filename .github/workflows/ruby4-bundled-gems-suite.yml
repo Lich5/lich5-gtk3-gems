@@ -371,6 +371,16 @@ jobs:
             Write-Text $path $content.Replace($needle, "$insert`n$needle")
           }
 
+          function Replace-Required([string] $path, [string] $pattern, [string] $replacement, [string] $description) {
+            $content = Read-Text $path
+            $updated = $content -replace $pattern, $replacement
+            if ($updated -eq $content) {
+              Write-Error "Patch failed: expected $description was not found in $path."
+              exit 1
+            }
+            Write-Text $path $updated
+          }
+
           foreach ($gemName in @('glib2', 'gobject-introspection', 'gio2', 'cairo', 'cairo-gobject', 'pango', 'gdk_pixbuf2', 'atk', 'gdk3', 'gtk3')) {
             Patch-Gemspec $gemName
           }
@@ -423,9 +433,9 @@ jobs:
             '',
             'major, minor, _ = RUBY_VERSION.split(/\./)'
           ) -join "`n"
-          Insert-Before $gi 'require "gobject-introspection.so"' $giInsert
+          Insert-Before $gi 'require "gobject_introspection.so"' $giInsert
+          Replace-Required $gi 'require\s+"gobject_introspection\.so"' 'require "gobject-introspection/#{major}.#{minor}/gobject_introspection.so"' 'gobject-introspection native extension require'
           $giContent = Read-Text $gi
-          $giContent = $giContent -replace 'require\s+"gobject-introspection\.so"', 'require "gobject-introspection/#{major}.#{minor}/gobject_introspection.so"'
           $giContent = $giContent -replace 'GObjectIntrospection\.prepend_typelib_path\(([^)]*)\)', 'GObjectIntrospection.prepend_typelib_path(vendor_dir + "lib" + "girepository-1.0")'
           Write-Text $gi $giContent
 
@@ -476,9 +486,7 @@ jobs:
           }
 
           $cairoGObject = Join-Path $sourceRoot 'cairo-gobject\lib\cairo-gobject.rb'
-          $cgo = Read-Text $cairoGObject
-          $cgo = $cgo -replace 'require\s+"cairo-gobject\.so"', 'major, minor, _ = RUBY_VERSION.split(/\./)' + "`n" + 'require "cairo-gobject/#{major}.#{minor}/cairo_gobject.so"'
-          Write-Text $cairoGObject $cgo
+          Replace-Required $cairoGObject 'require\s+"cairo_gobject\.so"' ('major, minor, _ = RUBY_VERSION.split(/\./)' + "`n" + 'require "cairo-gobject/#{major}.#{minor}/cairo_gobject.so"') 'cairo-gobject native extension require'
 
           if ($env:GLIB2_GC_REPAIR -eq 'cache-ruby-property-setter-values') {
             $objectSource = Join-Path $sourceRoot 'glib2\ext\glib2\rbgobj_object.c'
