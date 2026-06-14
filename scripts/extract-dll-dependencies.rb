@@ -27,7 +27,10 @@
 # This replaces hardcoded DLL lists with automated dependency analysis, ensuring
 # no missing DLLs at runtime.
 #
-# See docs/adr/0001-binary-gem-upstream-modifications.md for context.
+# Note: this script runs under native (RubyInstaller) Ruby, where POSIX-style
+# paths like /ucrt64 and /dev/null do NOT resolve. Root/bin detection therefore
+# prefers real Windows paths (MSYS2_ROOT) and objdump probing avoids POSIX-only
+# shell redirects. See docs/adr/0001-binary-gem-upstream-modifications.md.
 
 require 'English'
 require 'fileutils'
@@ -49,6 +52,9 @@ require 'set'
 #   extractor = DLLDependencyExtractor.new('glib2', 'x64', '/c/msys64')
 #   extractor.extract
 class DLLDependencyExtractor
+  # MSYS2 environment lanes whose own directory already contains bin/.
+  MSYS2_LANES = %w[ucrt64 clang64 clang32 mingw64 mingw32].freeze
+
   # Initialize DLL dependency extractor
   #
   # @param gem_name [String] Name of the gem (e.g., 'glib2')
@@ -60,28 +66,26 @@ class DLLDependencyExtractor
     @gem_name = gem_name
     @architecture = architecture
     @msys2_root = msys2_root || detect_msys2_root
+    @msys2_prefix = resolve_msys2_prefix
 
-    # Construct the bin path
+    # Construct the bin path.
     # MSYS2 has multiple environments: MINGW64, MINGW32, UCRT64, CLANG64, etc.
-    # If MINGW_PREFIX or MSYSTEM_PREFIX points to one of these directly (like /ucrt64),
-    # the DLLs are in root/bin. Otherwise, append the architecture subdirectory.
-
-    # Check if this looks like a direct MSYS2 environment path (not the MSYS2 root)
+    # If @msys2_root already points at a lane (like .../ucrt64), the DLLs are in
+    # root/bin. Otherwise @msys2_root is the install root (like .../msys64) and we
+    # append the resolved lane (e.g. ucrt64) — NOT a hardcoded mingw64.
     root_basename = File.basename(@msys2_root)
-    @msys2_bin = if %w[ucrt64 clang64 mingw64 mingw32].include?(root_basename) ||
-                    @msys2_root.end_with?('mingw64') || @msys2_root.end_with?('mingw32')
-                   # Direct environment path or path ending with architecture
+    @msys2_bin = if MSYS2_LANES.include?(root_basename) ||
+                    MSYS2_LANES.any? { |lane| @msys2_root.end_with?(lane) }
                    File.join(@msys2_root, 'bin')
                  else
-                   # Traditional MSYS2 root: /c/msys64 or /msys64
-                   # Need to append the architecture subdirectory
-                   File.join(@msys2_root, architecture_to_msys2_path, 'bin')
+                   File.join(@msys2_root, @msys2_prefix, 'bin')
                  end
 
     puts 'DLL Extraction Configuration:'
     puts "  Gem: #{@gem_name}"
     puts "  Architecture: #{@architecture}"
     puts "  MSYS2 Root: #{@msys2_root}"
+    puts "  MSYS2 Lane: #{@msys2_prefix}"
     puts "  MSYS2 Bin: #{@msys2_bin}"
     puts ''
   end
@@ -130,26 +134,24 @@ class DLLDependencyExtractor
 
   # Detect MSYS2 installation root from environment or common paths
   #
-  # Checks MSYSTEM_PREFIX, MINGW_PREFIX environment variables, then falls back
-  # to common installation paths.
+  # Prefers a real Windows directory (MSYS2_ROOT, exported by the build) because
+  # this script runs under native Ruby. MSYSTEM_PREFIX / MINGW_PREFIX are often
+  # POSIX paths (/ucrt64) that only resolve inside an MSYS shell, so they are
+  # accepted only when they exist as real directories.
   #
   # @return [String] Path to MSYS2 installation
   # @raise [SystemExit] if MSYS2 cannot be found
   def detect_msys2_root
-    # In GitHub Actions MSYS2, MINGW_PREFIX points directly to mingw64/mingw32
-    # We need the parent directory (MSYSTEM_PREFIX or the root)
+    # Preferred: the real Windows MSYS2 root the build exports
+    # (e.g. D:\a\_temp\msys64).
+    env_root = ENV['MSYS2_ROOT']
+    return env_root if env_root && !env_root.empty? && Dir.exist?(env_root)
 
-    # Try to detect from MSYSTEM_PREFIX first (the MSYS2 root)
-    if ENV.fetch('MSYSTEM_PREFIX', nil) && Dir.exist?(ENV.fetch('MSYSTEM_PREFIX', nil))
-      return ENV.fetch('MSYSTEM_PREFIX', nil)
-    end
-
-    # If MINGW_PREFIX is set (e.g., /mingw64), use it directly
-    # In MSYS2, the bin directory is mingw64/bin or mingw32/bin
-    if ENV['MINGW_PREFIX']
-      # MINGW_PREFIX is like /mingw64 or /mingw32
-      # This is where the toolchain DLLs are located
-      return ENV['MINGW_PREFIX']
+    # MSYSTEM_PREFIX / MINGW_PREFIX are frequently POSIX (/ucrt64); only honor
+    # them if they actually resolve to a directory in this process.
+    %w[MSYSTEM_PREFIX MINGW_PREFIX].each do |var|
+      value = ENV[var]
+      return value if value && !value.empty? && Dir.exist?(value)
     end
 
     # Try common MSYS2 installation paths
@@ -163,17 +165,37 @@ class DLLDependencyExtractor
 
     unless root
       puts '❌ ERROR: Could not detect MSYS2 installation'
-      puts "   Environment: MSYSTEM_PREFIX=#{ENV['MSYSTEM_PREFIX'].inspect}, " \
+      puts "   Environment: MSYS2_ROOT=#{ENV['MSYS2_ROOT'].inspect}, " \
+           "MSYSTEM_PREFIX=#{ENV['MSYSTEM_PREFIX'].inspect}, " \
            "MINGW_PREFIX=#{ENV['MINGW_PREFIX'].inspect}"
       puts "   Tried paths: #{possible_roots.join(', ')}"
-      puts '   Set MSYSTEM_PREFIX or MINGW_PREFIX environment variable explicitly'
+      puts '   Set MSYS2_ROOT (or MSYSTEM_PREFIX/MINGW_PREFIX) to a real directory'
       exit 1
     end
 
     root
   end
 
+  # Resolve the MSYS2 lane (subdirectory under the install root) to use.
+  #
+  # Prefers the lane the build exports (MSYS2_PREFIX, e.g. 'ucrt64'), then the
+  # lowercased MSYSTEM, then falls back to the architecture mapping. This is what
+  # keeps a UCRT build pointed at ucrt64/bin instead of mingw64/bin.
+  #
+  # @return [String] MSYS2 lane name (e.g. 'ucrt64', 'mingw64')
+  def resolve_msys2_prefix
+    env_prefix = ENV['MSYS2_PREFIX']
+    return env_prefix if env_prefix && !env_prefix.empty?
+
+    msystem = ENV['MSYSTEM']
+    return msystem.downcase if msystem && !msystem.empty?
+
+    architecture_to_msys2_path
+  end
+
   # Convert architecture name to MSYS2 subdirectory path
+  #
+  # Last-resort fallback only; the build normally exports MSYS2_PREFIX/MSYSTEM.
   #
   # @return [String] MSYS2 subdirectory ('mingw64' or 'mingw32')
   # @raise [RuntimeError] if architecture is unknown
@@ -223,46 +245,21 @@ class DLLDependencyExtractor
   # @param so_file [String] Path to compiled .so file
   # @return [Array<String>] List of DLL names to bundle
   def extract_dll_names(so_file)
-    # Use objdump to find all imported DLLs
-    # objdump -p shows imports, grep for DLL names
-
     puts '    Locating objdump...'
 
-    # Try to find objdump - be explicit about what we're checking
-    objdump_candidates = [
-      "#{@msys2_bin}/objdump",           # Full path in MSYS2 bin
-      "#{@msys2_bin}/objdump.exe",       # Windows executable
-      'objdump' # In system PATH
-    ]
-
-    objdump_cmd = nil
-    objdump_candidates.each do |candidate|
-      # Check if file exists
-      if File.exist?(candidate)
-        objdump_cmd = candidate
-        puts "    ✓ Found objdump at: #{candidate}"
-        break
-      end
-
-      # Try running it (in case PATH has it but File.exist? fails)
-      next unless system("#{candidate} --version > /dev/null 2>&1")
-
-      objdump_cmd = candidate
-      puts "    ✓ Found objdump in PATH: #{candidate}"
-      break
-    end
-
+    objdump_cmd = resolve_objdump
     unless objdump_cmd
       puts '    ⚠️  WARNING: objdump not found'
-      puts "       Tried: #{objdump_candidates.inspect}"
       puts "       MSYS2 Bin: #{@msys2_bin}"
+      puts "       PATH: #{ENV['PATH']}"
       puts '       Cannot perform DLL dependency analysis'
       puts '       Falling back to no DLL bundling'
       return []
     end
 
+    puts "    ✓ Using objdump: #{objdump_cmd}"
     puts "    Running: #{objdump_cmd} -p #{so_file}"
-    output = `#{objdump_cmd} -p "#{so_file}" 2>&1`
+    output = `"#{objdump_cmd}" -p "#{so_file}" 2>&1`
     exit_status = $CHILD_STATUS.exitstatus
 
     if exit_status != 0
@@ -281,30 +278,7 @@ class DLLDependencyExtractor
     output.lines.first(20).each { |line| puts "      #{line.rstrip}" }
     puts '    ...' if output.lines.count > 20
 
-    # Extract DLL names from objdump output
-    # Lines like: DLL Name: msvcrt.dll
-    dll_names = output.scan(/DLL Name: ([^\s]+)/i).flatten.map(&:strip).uniq
-
-    # Filter out common system DLLs that shouldn't be bundled
-    excluded = %w[
-      kernel32.dll
-      ntdll.dll
-      msvcrt.dll
-      advapi32.dll
-      user32.dll
-      gdi32.dll
-      ole32.dll
-      oleaut32.dll
-      shell32.dll
-      comctl32.dll
-      comdlg32.dll
-      mpr.dll
-      winspool.dll
-      ws2_32.dll
-      wsock32.dll
-    ]
-
-    dll_names.reject { |dll| excluded.any? { |excl| dll.downcase == excl.downcase } }
+    filter_system_dlls(parse_dll_names(output))
   end
 
   # Copy DLLs and their transitive dependencies to vendor/local/bin/
@@ -497,55 +471,86 @@ class DLLDependencyExtractor
   def extract_dll_names_from_file(dll_path)
     # Extract DLL dependencies from a file using objdump
     # This handles transitive dependencies
+    objdump_cmd = resolve_objdump
+    return [] unless objdump_cmd
 
-    output = `#{find_objdump} -p "#{dll_path}" 2>&1`
+    output = `"#{objdump_cmd}" -p "#{dll_path}" 2>&1`
     return [] if output.empty?
 
-    # Extract DLL names from objdump output
-    dll_names = output.scan(/DLL Name: ([^\s]+)/i).flatten.map(&:strip).uniq
-
-    # Filter out system DLLs
-    excluded = %w[
-      kernel32.dll
-      ntdll.dll
-      msvcrt.dll
-      advapi32.dll
-      user32.dll
-      gdi32.dll
-      ole32.dll
-      oleaut32.dll
-      shell32.dll
-      comctl32.dll
-      comdlg32.dll
-      mpr.dll
-      winspool.dll
-      ws2_32.dll
-      wsock32.dll
-    ]
-
-    dll_names.reject { |dll| excluded.any? { |excl| dll.downcase == excl.downcase } }
+    filter_system_dlls(parse_dll_names(output))
   rescue StandardError
     # If objdump fails, return empty list
     []
   end
 
-  # Find objdump executable
+  # Parse "DLL Name: foo.dll" lines from objdump -p output.
   #
-  # @return [String] Path to objdump command
-  def find_objdump
-    # Find objdump command
+  # @param output [String] objdump -p output
+  # @return [Array<String>] unique imported DLL names
+  def parse_dll_names(output)
+    output.scan(/DLL Name: ([^\s]+)/i).flatten.map(&:strip).uniq
+  end
+
+  # Windows system DLLs that ship with the OS and must not be bundled.
+  SYSTEM_DLLS = %w[
+    kernel32.dll
+    ntdll.dll
+    msvcrt.dll
+    advapi32.dll
+    user32.dll
+    gdi32.dll
+    ole32.dll
+    oleaut32.dll
+    shell32.dll
+    comctl32.dll
+    comdlg32.dll
+    mpr.dll
+    winspool.dll
+    ws2_32.dll
+    wsock32.dll
+  ].freeze
+
+  # Drop OS-provided system DLLs from a list of imports.
+  #
+  # @param dll_names [Array<String>] DLL names
+  # @return [Array<String>] filtered DLL names
+  def filter_system_dlls(dll_names)
+    dll_names.reject { |dll| SYSTEM_DLLS.any? { |sys| dll.casecmp?(sys) } }
+  end
+
+  # Resolve a working objdump command (memoized).
+  #
+  # Tries the explicit MSYS2 bin first, then bare names on PATH. Crucially, the
+  # PATH probe runs the candidate WITHOUT a POSIX `> /dev/null` redirect (which
+  # fails under cmd.exe on native Windows Ruby) — args are passed as a list and
+  # output is silenced with File::NULL ('NUL' on Windows, '/dev/null' on Unix).
+  #
+  # @return [String, nil] objdump command/path, or nil if none works
+  def resolve_objdump
+    return @objdump_cmd if defined?(@objdump_cmd)
+
     candidates = [
-      "#{@msys2_bin}/objdump",
-      "#{@msys2_bin}/objdump.exe",
+      File.join(@msys2_bin, 'objdump.exe'),
+      File.join(@msys2_bin, 'objdump'),
+      'objdump.exe',
       'objdump'
     ]
 
-    candidates.each do |candidate|
-      return candidate if File.exist?(candidate)
-      return candidate if system("#{candidate} --version > /dev/null 2>&1")
-    end
+    @objdump_cmd = candidates.find { |candidate| objdump_works?(candidate) }
+  end
 
-    'objdump' # Fallback
+  # Whether an objdump candidate exists or runs.
+  #
+  # @param candidate [String] path or bare command name
+  # @return [Boolean]
+  def objdump_works?(candidate)
+    return true if File.file?(candidate)
+
+    # List form avoids the shell, so bare names resolve via PATH; File::NULL is
+    # the portable null device (NUL on Windows).
+    system(candidate, '--version', out: File::NULL, err: File::NULL)
+  rescue StandardError
+    false
   end
 end
 
