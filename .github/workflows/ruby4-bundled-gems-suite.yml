@@ -43,7 +43,9 @@ permissions:
 jobs:
   build_ruby4_bundled_gems_suite:
     name: Build Ruby4 bundled gems suite (windows-ucrt64)
-    runs-on: windows-latest
+    # Pinned to an explicit image so the windows-latest -> windows-2025-vs2026
+    # redirect (and future moves) cannot silently change the MSYS2 layout.
+    runs-on: windows-2025
     timeout-minutes: 90
 
     env:
@@ -54,7 +56,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Validate inputs
         shell: powershell
@@ -104,7 +106,11 @@ jobs:
           "NATIVE_RUNTIME_GEMS=$nativeRuntimeGems" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "DIAGNOSTIC_MKMF_LOGS=$diagnosticMkmfLogs" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
+      # Single source of truth for the MSYS2/MinGW toolchain. The whole job
+      # is keyed off this install via steps.msys2.outputs.msys2-location, so
+      # there is no second pacman pass into a separate C:\msys64 root.
       - name: Install MSYS2 UCRT build surface
+        id: msys2
         uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
@@ -117,6 +123,8 @@ jobs:
             mingw-w64-ucrt-x86_64-binutils
             mingw-w64-ucrt-x86_64-make
             mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-libffi
+            mingw-w64-ucrt-x86_64-sqlite3
             mingw-w64-ucrt-x86_64-gobject-introspection
             mingw-w64-ucrt-x86_64-gobject-introspection-runtime
             mingw-w64-ucrt-x86_64-gtk3
@@ -127,10 +135,13 @@ jobs:
         id: lanepath
         shell: powershell
         run: |
-          $msys = 'C:\msys64'
+          # Resolve the MSYS2 root from the setup-msys2 install (its own
+          # location, not the runner's preinstalled C:\msys64). Everything
+          # downstream keys off MSYS2_ROOT, so this is the single root.
+          $msys = '${{ steps.msys2.outputs.msys2-location }}'
           $prefix = $env:MSYS2_PREFIX
-          if (!(Test-Path $msys)) {
-            Write-Error "MSYS2 setup failed: expected $msys to exist."
+          if ([string]::IsNullOrWhiteSpace($msys) -or !(Test-Path $msys)) {
+            Write-Error "MSYS2 setup failed: expected install root at '$msys' to exist."
             exit 1
           }
 
@@ -152,51 +163,6 @@ jobs:
           "MSYSTEM_PREFIX=/$prefix" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "MINGW_PREFIX=/$prefix" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Install native build packages
-        shell: powershell
-        env:
-          PATH: ${{ steps.lanepath.outputs.path }}
-        run: |
-          $msys = $env:MSYS2_ROOT
-          $prefix = $env:MSYS2_PREFIX
-          $packagePrefix = $env:MSYS2_PACKAGE_PREFIX
-          $pacman = Join-Path $msys 'usr\bin\pacman.exe'
-          if (!(Test-Path $pacman)) {
-            Write-Error "Native package install failed: pacman.exe was not found at $pacman."
-            exit 1
-          }
-
-          $env:Path = "$msys\$prefix\bin;$msys\usr\bin;$env:Path"
-          $packages = @(
-            'base-devel',
-            'make',
-            "$packagePrefix-gcc",
-            "$packagePrefix-gcc-libs",
-            "$packagePrefix-binutils",
-            "$packagePrefix-make",
-            "$packagePrefix-pkgconf",
-            "$packagePrefix-gobject-introspection",
-            "$packagePrefix-gobject-introspection-runtime",
-            "$packagePrefix-gtk3",
-            "$packagePrefix-pdcurses",
-            "$packagePrefix-ncurses"
-          )
-
-          & $pacman -S --needed --noconfirm @packages
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Native package install failed: pacman could not install the UCRT native build package set."
-            exit $LASTEXITCODE
-          }
-
-          Write-Host "::group::Selected native package versions"
-          foreach ($package in ($packages | Where-Object { $_ -ne 'base-devel' })) {
-            & $pacman -Q $package
-            if ($LASTEXITCODE -ne 0) {
-              Write-Host "::notice::Package version query did not return a concrete package for $package."
-            }
-          }
-          Write-Host "::endgroup::"
-
       - name: Resolve native build surface
         shell: powershell
         env:
@@ -205,15 +171,41 @@ jobs:
           $msys = $env:MSYS2_ROOT
           $prefix = $env:MSYS2_PREFIX
           $gcc = Join-Path $msys "$prefix\bin\gcc.exe"
-          $make = Join-Path $msys "$prefix\bin\make.exe"
           $pkgConfig = Join-Path $msys "$prefix\bin\pkg-config.exe"
           $pkgConfigPath = "$msys\$prefix\lib\pkgconfig;$msys\lib\pkgconfig"
 
-          foreach ($tool in @($gcc, $make, $pkgConfig)) {
-            if (!(Test-Path $tool)) {
-              Write-Error "Native build surface validation failed: expected tool was not found at $tool."
-              exit 1
+          # GNU make ships in the MSYS lane as usr\bin\make.exe; the UCRT
+          # package provides ucrt64\bin\mingw32-make.exe (a different name).
+          # There is no ucrt64\bin\make.exe. Prefer the MSYS make for mkmf
+          # compatibility and fall back to mingw32-make.
+          $makeCandidates = @(
+            (Join-Path $msys 'usr\bin\make.exe'),
+            (Join-Path $msys "$prefix\bin\mingw32-make.exe")
+          )
+          $make = $makeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+          # Probe the surface before gating so a failure shows what is present.
+          Write-Host "::group::Native build surface probe"
+          where.exe gcc
+          where.exe make
+          where.exe mingw32-make
+          where.exe pkg-config
+          Write-Host "::endgroup::"
+
+          # Validate the whole surface at once and report every gap together.
+          $required = [ordered]@{ gcc = $gcc; make = $make; 'pkg-config' = $pkgConfig }
+          $missing = @()
+          foreach ($name in $required.Keys) {
+            $path = $required[$name]
+            if ([string]::IsNullOrEmpty($path) -or !(Test-Path $path)) {
+              $missing += $name
             }
+          }
+          if ($missing.Count -gt 0) {
+            $missingList = $missing -join ', '
+            $searched = "Searched gcc=$gcc; make=$($makeCandidates -join ' | '); pkg-config=$pkgConfig."
+            Write-Error "Native build surface validation failed: missing tool(s): $missingList. $searched"
+            exit 1
           }
 
           "CC=$gcc" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
@@ -226,9 +218,6 @@ jobs:
           Write-Host "MAKE=$make"
           Write-Host "PKG_CONFIG=$pkgConfig"
           Write-Host "PKG_CONFIG_PATH=$pkgConfigPath"
-          where.exe gcc
-          where.exe make
-          where.exe pkg-config
           & $gcc --version
           & $make --version
           & $pkgConfig --version
@@ -631,7 +620,9 @@ jobs:
           $env:MSYSTEM_PREFIX = "/$prefix"
           $env:MINGW_PREFIX = "/$prefix"
           $env:CC = Join-Path $msys "$prefix\bin\gcc.exe"
-          $env:MAKE = Join-Path $msys "$prefix\bin\make.exe"
+          # GNU make is usr\bin\make.exe; UCRT provides mingw32-make.exe.
+          # Match the resolution used in "Resolve native build surface".
+          $env:MAKE = if (Test-Path "$msys\usr\bin\make.exe") { "$msys\usr\bin\make.exe" } else { "$msys\$prefix\bin\mingw32-make.exe" }
           $env:PKG_CONFIG = Join-Path $msys "$prefix\bin\pkg-config.exe"
           $env:PKG_CONFIG_PATH = "$msys\$prefix\lib\pkgconfig;$msys\lib\pkgconfig"
           $env:RCAIRO_SOURCE_DIR = Join-Path $sourceRoot 'cairo'
