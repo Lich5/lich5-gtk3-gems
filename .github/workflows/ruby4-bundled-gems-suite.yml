@@ -43,9 +43,7 @@ permissions:
 jobs:
   build_ruby4_bundled_gems_suite:
     name: Build Ruby4 bundled gems suite (windows-ucrt64)
-    # Pinned to an explicit image so the windows-latest -> windows-2025-vs2026
-    # redirect (and future moves) cannot silently change the MSYS2 layout.
-    runs-on: windows-2025
+    runs-on: windows-latest
     timeout-minutes: 90
 
     env:
@@ -627,7 +625,12 @@ jobs:
           # GNU make is usr\bin\make.exe; UCRT provides mingw32-make.exe.
           # Match the resolution used in "Resolve native build surface", with
           # forward slashes so the path survives MSYS sh during gem builds.
-          $env:MAKE = (if (Test-Path "$msys\usr\bin\make.exe") { "$msys\usr\bin\make.exe" } else { "$msys\$prefix\bin\mingw32-make.exe" }) -replace '\\', '/'
+          if (Test-Path "$msys\usr\bin\make.exe") {
+            $env:MAKE = "$msys\usr\bin\make.exe"
+          } else {
+            $env:MAKE = "$msys\$prefix\bin\mingw32-make.exe"
+          }
+          $env:MAKE = $env:MAKE -replace '\\', '/'
           $env:PKG_CONFIG = Join-Path $msys "$prefix\bin\pkg-config.exe"
           $env:PKG_CONFIG_PATH = "$msys\$prefix\lib\pkgconfig;$msys\lib\pkgconfig"
           $env:RCAIRO_SOURCE_DIR = Join-Path $sourceRoot 'cairo'
