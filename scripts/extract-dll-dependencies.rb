@@ -278,7 +278,14 @@ class DLLDependencyExtractor
     output.lines.first(20).each { |line| puts "      #{line.rstrip}" }
     puts '    ...' if output.lines.count > 20
 
-    filter_system_dlls(parse_dll_names(output))
+    # Partition imports by provenance so we vendor only what we should, and
+    # report the rest as "provided elsewhere" rather than alarming "not found".
+    provided, vendorable = parse_dll_names(output).partition { |dll| non_bundled_reason(dll) }
+    unless provided.empty?
+      puts "    ℹ️  #{provided.count} import(s) provided elsewhere (not vendored):"
+      provided.each { |dll| puts "       - #{dll} — #{non_bundled_reason(dll)}" }
+    end
+    vendorable
   end
 
   # Copy DLLs and their transitive dependencies to vendor/local/bin/
@@ -510,12 +517,29 @@ class DLLDependencyExtractor
     wsock32.dll
   ].freeze
 
-  # Drop OS-provided system DLLs from a list of imports.
+  # Why an import is NOT vendored into vendor/local/bin. Each of these is a
+  # genuine dependency, but it is satisfied by something other than this gem's
+  # bundle, so copying it would be wrong (and "not found" is not an error).
+  #
+  # @param dll [String] imported module name from objdump
+  # @return [String, nil] human-readable provider, or nil if it should be vendored
+  def non_bundled_reason(dll)
+    return 'sibling gem extension (loaded via require order)' if dll.downcase.end_with?('.so')
+    return 'Ruby runtime' if dll =~ /-ruby\d+\.dll\z/i
+    return 'OS API set' if dll =~ /\A(api|ext)-ms-/i
+    return 'MSVC runtime' if dll =~ /\A(vcruntime|msvcp)\d/i
+    return 'OS / system DLL' if SYSTEM_DLLS.any? { |sys| dll.casecmp?(sys) }
+
+    nil
+  end
+
+  # Keep only imports that should be vendored from MSYS2 (drop OS, Ruby runtime,
+  # MSVC runtime, and sibling .so extensions, which are provided elsewhere).
   #
   # @param dll_names [Array<String>] DLL names
-  # @return [Array<String>] filtered DLL names
+  # @return [Array<String>] vendorable DLL names
   def filter_system_dlls(dll_names)
-    dll_names.reject { |dll| SYSTEM_DLLS.any? { |sys| dll.casecmp?(sys) } }
+    dll_names.reject { |dll| non_bundled_reason(dll) }
   end
 
   # Resolve a working objdump command (memoized).

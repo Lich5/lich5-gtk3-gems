@@ -508,7 +508,7 @@ jobs:
           $giInsert = @(
             'base_dir = Pathname.new(__FILE__).dirname.dirname.expand_path',
             'vendor_dir = base_dir + "vendor" + "local"',
-            'GObjectIntrospection.prepend_dll_path(vendor_dir + "bin")',
+            'GLib.prepend_dll_path(vendor_dir + "bin")',
             '',
             'fontconfig_path = vendor_dir + "etc" + "fonts"',
             'fonts_conf = fontconfig_path + "fonts.conf"',
@@ -559,7 +559,10 @@ jobs:
               continue
             }
             $loader = Read-Text $loaderPath
-            $gemName = Split-Path (Split-Path (Split-Path $loaderPath -Parent) -Parent) -Leaf
+            # loader.rb lives at <gem>/lib/<gem>/loader.rb, so the gem name is
+            # the leaf of its immediate parent dir (one -Parent, not two — two
+            # yields "lib", so the require "<gem>.so" rewrite never matches).
+            $gemName = Split-Path (Split-Path $loaderPath -Parent) -Leaf
             $moduleName = $gemName
             $prepend = @(
               '      base_dir = Pathname.new(__FILE__).dirname.dirname.dirname.expand_path',
