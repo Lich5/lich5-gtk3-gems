@@ -3,9 +3,6 @@
 require 'rake/clean'
 require 'fileutils'
 
-# Configuration
-RUBY_GNOME_VERSION = ENV['RUBY_GNOME_VERSION'] || '4.3.4'
-
 # Supported Ruby versions for binary gems
 RUBY_VERSIONS = %w[
   3.3
@@ -61,7 +58,7 @@ task :default do
   puts ''
   puts "Ruby version: #{RUBY_VERSION}"
   puts "Platform: #{Gem::Platform.local}"
-  puts "Target ruby-gnome version: #{RUBY_GNOME_VERSION}"
+  puts "Target ruby-gnome version: #{ENV.fetch('RUBY_GNOME_VERSION', '(set during build)')}"
   puts ''
   puts "GTK3 gems (#{GTK3_GEMS.count}): #{GTK3_GEMS.join(', ')}"
   puts "Other gems (#{OTHER_GEMS.count}): #{OTHER_GEMS.join(', ')}"
@@ -74,6 +71,36 @@ task :default do
   puts '  rake vendor:setup # Set up vendor libraries'
   puts '  rake build:all    # Build all gems (when ready)'
   puts '  rake test:quick   # Quick test (when implemented)'
+end
+
+def actual_ruby_gnome_version
+  rbglib_h = File.join(GEMS_DIR, 'glib2', 'ext', 'glib2', 'rbglib.h')
+  abort "Missing Ruby-GNOME version header: #{rbglib_h}" unless File.exist?(rbglib_h)
+
+  versions = {}
+  File.foreach(rbglib_h) do |line|
+    next unless /#define\s+RBGLIB_([A-Z]+)_VERSION\s+(\d+)/ =~ line
+
+    versions[Regexp.last_match(1).downcase] = Regexp.last_match(2).to_i
+  end
+
+  %w[major minor micro].map { |type| versions.fetch(type) }.join('.')
+rescue KeyError => error
+  abort "Could not determine Ruby-GNOME source version from #{rbglib_h}: missing #{error.key}"
+end
+
+def requested_ruby_gnome_version
+  ENV.fetch('RUBY_GNOME_VERSION') do
+    abort 'RUBY_GNOME_VERSION is required when building Ruby-GNOME binary gems'
+  end
+end
+
+def validate_ruby_gnome_source_version!
+  requested = requested_ruby_gnome_version
+  actual = actual_ruby_gnome_version
+  return if actual == requested
+
+  abort "Ruby-GNOME source version mismatch: requested #{requested}, actual #{actual}"
 end
 
 namespace :vendor do
@@ -162,6 +189,8 @@ namespace :build do
 
   desc 'Build a single gem (binary for Windows, or source for other platforms)'
   task :gem, [:name] do |_t, args|
+    validate_ruby_gnome_source_version!
+
     gem_name = args[:name]
 
     unless ALL_GEMS.include?(gem_name)

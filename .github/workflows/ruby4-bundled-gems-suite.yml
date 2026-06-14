@@ -281,6 +281,43 @@ jobs:
           }
           Copy-Item $cairoRoot (Join-Path $build 'cairo') -Recurse -Force
 
+          $sourceGemPackages = @{
+            'cairo' = $cairoGem
+          }
+          foreach ($gemName in $sourceGemPackages.Keys) {
+            $gemDir = Join-Path $build $gemName
+            $gemspec = Join-Path $gemDir "$gemName.gemspec"
+            if (Test-Path $gemspec) {
+              Write-Host "Source normalization: $gemName already provides $gemspec"
+              continue
+            }
+
+            $gemPackage = $sourceGemPackages[$gemName]
+            if (!(Test-Path $gemPackage)) {
+              Write-Error "Source normalization failed: fetched gem package for $gemName is missing at $gemPackage."
+              exit 1
+            }
+            if (!(Test-Path $gemDir)) {
+              Write-Error "Source normalization failed: source directory for $gemName is missing at $gemDir."
+              exit 1
+            }
+
+            $normalizeScript = @(
+              'require "rubygems/package"',
+              'gem_package, gemspec_path = ARGV',
+              'spec = Gem::Package.new(gem_package).spec',
+              'File.write(gemspec_path, spec.to_ruby)'
+            ) -join "`n"
+            $normalizeScriptPath = Join-Path $env:RUNNER_TEMP "normalize-$gemName-gemspec.rb"
+            Set-Content -Path $normalizeScriptPath -Value $normalizeScript -Encoding ascii
+            & $env:RUBY_EXE $normalizeScriptPath $gemPackage $gemspec
+            if ($LASTEXITCODE -ne 0 -or !(Test-Path $gemspec)) {
+              Write-Error "Source normalization failed: could not generate $gemspec from $gemPackage."
+              exit 1
+            }
+            Write-Host "Source normalization: generated $gemspec from $gemPackage"
+          }
+
       - name: Patch upstream sources for Ruby4 binary gems
         shell: powershell
         env:
@@ -476,11 +513,25 @@ jobs:
           $gemExe = $env:GEM_EXE
           $sourceRoot = $env:SOURCE_ROOT
           $pkgDir = $env:PKG_DIR
+          $harnessRoot = Join-Path $env:RUNNER_TEMP 'ruby4-bundled-gems\harness'
+          $harnessGems = Join-Path $harnessRoot 'gems'
+          if (Test-Path $harnessRoot) {
+            Remove-Item $harnessRoot -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $harnessGems -Force | Out-Null
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Rakefile') $harnessRoot -Force
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'scripts') (Join-Path $harnessRoot 'scripts') -Recurse -Force
+          Copy-Item (Join-Path $sourceRoot '*') $harnessGems -Recurse -Force
+          $sourceRoot = $harnessGems
+
           $env:Path = "$rubyRoot\bin;$msys\$prefix\bin;$msys\usr\bin;$env:Path"
           $env:RI_DEVKIT = $msys
           $env:MSYSTEM_PREFIX = "/$prefix"
           $env:MINGW_PREFIX = "/$prefix"
           $env:PKG_CONFIG_PATH = "$msys\$prefix\lib\pkgconfig;$msys\lib\pkgconfig"
+          $env:RCAIRO_SOURCE_DIR = Join-Path $sourceRoot 'cairo'
+          $env:BINARY_GEM = 'true'
+          $env:KEEP_BUILT_EXTENSIONS = 'true'
 
           & $gemExe install rake pkg-config native-package-installer
           if ($LASTEXITCODE -ne 0) {
@@ -488,7 +539,6 @@ jobs:
             exit $LASTEXITCODE
           }
 
-          $rubyMinor = & $rubyExe -e "print RUBY_VERSION.split('.')[0,2].join('.')"
           $objdump = Join-Path $msys "$prefix\bin\objdump.exe"
           $prefixBin = Join-Path $msys "$prefix\bin"
 
@@ -536,30 +586,14 @@ jobs:
             }
           }
 
-          function Build-Gem([string] $gemName) {
+          function Build-GemWithHarness([string] $gemName) {
             Write-Host "::group::Build $gemName"
-            $gemDir = Join-Path $sourceRoot $gemName
-            $extDir = Join-Path $gemDir "ext\$gemName"
-            $moduleName = $gemName.Replace('-', '_')
-            if (Test-Path (Join-Path $extDir 'extconf.rb')) {
-              Push-Location $extDir
-              Invoke-Checked "$gemName extconf" { & $rubyExe extconf.rb }
-              Invoke-Checked "$gemName make" { & make }
-              Pop-Location
-
-              $so = Join-Path $extDir "$moduleName.so"
-              if (!(Test-Path $so)) {
-                Write-Error "Build failed: expected native extension missing for $gemName at $so."
-                exit 1
-              }
-              $targetLib = Join-Path $gemDir "lib\$gemName\$rubyMinor"
-              New-Item -ItemType Directory -Path $targetLib -Force | Out-Null
-              Copy-Item $so (Join-Path $targetLib "$moduleName.so") -Force
-            }
-
-            Push-Location $gemDir
-            Invoke-Checked "$gemName gem build" { & $gemExe build "$gemName.gemspec" }
-            $builtGem = Get-ChildItem -Filter "$gemName-*.gem" -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            Push-Location $harnessRoot
+            Invoke-Checked "$gemName binary gem build harness" { & $rubyExe -I. -e "require 'rake'; Rake.application.load_rakefile; Rake::Task['build:gem'].invoke('$gemName')" }
+            $builtGem = Get-ChildItem -Path (Join-Path $harnessRoot 'pkg') -Filter "$gemName-*.gem" -File |
+              Where-Object { $_.Name -match "^$([regex]::Escape($gemName))-\d" } |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1
             if (-not $builtGem) {
               Pop-Location
               Write-Error "Build failed: no gem artifact was produced for $gemName."
@@ -572,7 +606,7 @@ jobs:
           }
 
           foreach ($gemName in @('glib2', 'gobject-introspection')) {
-            Build-Gem $gemName
+            Build-GemWithHarness $gemName
           }
 
           $env:GI_TYPELIB_PATH = "$msys\$prefix\lib\girepository-1.0"
@@ -644,7 +678,7 @@ jobs:
           }
 
           foreach ($gemName in @('gio2', 'cairo', 'cairo-gobject', 'pango', 'gdk_pixbuf2', 'atk', 'gdk3', 'gtk3')) {
-            Build-Gem $gemName
+            Build-GemWithHarness $gemName
           }
 
       - name: Build and stage runtime gem bundle
