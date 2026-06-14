@@ -183,6 +183,10 @@ jobs:
             (Join-Path $msys "$prefix\bin\mingw32-make.exe")
           )
           $make = $makeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          # mkmf/gem-install spawns make through MSYS sh, which strips
+          # backslashes (D:\a\_temp -> D:a_temp). Use forward slashes so the
+          # path survives; make and Windows CreateProcess both accept them.
+          if ($make) { $make = $make -replace '\\', '/' }
 
           # Probe the surface before gating so a failure shows what is present.
           Write-Host "::group::Native build surface probe"
@@ -621,8 +625,9 @@ jobs:
           $env:MINGW_PREFIX = "/$prefix"
           $env:CC = Join-Path $msys "$prefix\bin\gcc.exe"
           # GNU make is usr\bin\make.exe; UCRT provides mingw32-make.exe.
-          # Match the resolution used in "Resolve native build surface".
-          $env:MAKE = if (Test-Path "$msys\usr\bin\make.exe") { "$msys\usr\bin\make.exe" } else { "$msys\$prefix\bin\mingw32-make.exe" }
+          # Match the resolution used in "Resolve native build surface", with
+          # forward slashes so the path survives MSYS sh during gem builds.
+          $env:MAKE = (if (Test-Path "$msys\usr\bin\make.exe") { "$msys\usr\bin\make.exe" } else { "$msys\$prefix\bin\mingw32-make.exe" }) -replace '\\', '/'
           $env:PKG_CONFIG = Join-Path $msys "$prefix\bin\pkg-config.exe"
           $env:PKG_CONFIG_PATH = "$msys\$prefix\lib\pkgconfig;$msys\lib\pkgconfig"
           $env:RCAIRO_SOURCE_DIR = Join-Path $sourceRoot 'cairo'
