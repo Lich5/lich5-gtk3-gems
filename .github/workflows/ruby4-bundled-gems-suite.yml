@@ -31,6 +31,11 @@ on:
         description: "Runtime gems that must be collected as x64-mingw-ucrt binary gems."
         required: false
         default: "sqlite3 ox ffi curses"
+      diagnostic-mkmf-logs:
+        description: "Dump mkmf.log files when native compilation fails."
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -60,6 +65,7 @@ jobs:
           $glib2GcRepair = '${{ inputs.glib2-gc-repair }}'
           $runtimeGems = '${{ inputs.runtime-gems }}'
           $nativeRuntimeGems = '${{ inputs.native-runtime-gems }}'
+          $diagnosticMkmfLogs = '${{ inputs.diagnostic-mkmf-logs }}'
 
           if ($rubyInstallerVersion -notmatch '^\d+\.\d+\.\d+-\d+$') {
             Write-Error "ruby-installer-version must look like N.N.N-N, for example 4.0.5-1; received '$rubyInstallerVersion'."
@@ -85,6 +91,10 @@ jobs:
             Write-Error "native-runtime-gems must list at least one native runtime gem."
             exit 1
           }
+          if ($diagnosticMkmfLogs -notin @('true', 'false')) {
+            Write-Error "diagnostic-mkmf-logs must be true or false; received '$diagnosticMkmfLogs'."
+            exit 1
+          }
 
           "RUBY_INSTALLER_VERSION=$rubyInstallerVersion" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "RUBY_GNOME_VERSION=$rubyGnomeVersion" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
@@ -92,6 +102,7 @@ jobs:
           "GLIB2_GC_REPAIR=$glib2GcRepair" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "RUNTIME_GEMS=$runtimeGems" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "NATIVE_RUNTIME_GEMS=$nativeRuntimeGems" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "DIAGNOSTIC_MKMF_LOGS=$diagnosticMkmfLogs" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Install MSYS2 UCRT build surface
         uses: msys2/setup-msys2@v2
@@ -140,6 +151,51 @@ jobs:
           "RI_DEVKIT=$msys" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "MSYSTEM_PREFIX=/$prefix" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "MINGW_PREFIX=/$prefix" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Install native build packages
+        shell: powershell
+        env:
+          PATH: ${{ steps.lanepath.outputs.path }}
+        run: |
+          $msys = $env:MSYS2_ROOT
+          $prefix = $env:MSYS2_PREFIX
+          $packagePrefix = $env:MSYS2_PACKAGE_PREFIX
+          $pacman = Join-Path $msys 'usr\bin\pacman.exe'
+          if (!(Test-Path $pacman)) {
+            Write-Error "Native package install failed: pacman.exe was not found at $pacman."
+            exit 1
+          }
+
+          $env:Path = "$msys\$prefix\bin;$msys\usr\bin;$env:Path"
+          $packages = @(
+            'base-devel',
+            'make',
+            "$packagePrefix-gcc",
+            "$packagePrefix-gcc-libs",
+            "$packagePrefix-binutils",
+            "$packagePrefix-make",
+            "$packagePrefix-pkgconf",
+            "$packagePrefix-gobject-introspection",
+            "$packagePrefix-gobject-introspection-runtime",
+            "$packagePrefix-gtk3",
+            "$packagePrefix-pdcurses",
+            "$packagePrefix-ncurses"
+          )
+
+          & $pacman -S --needed --noconfirm @packages
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Native package install failed: pacman could not install the UCRT native build package set."
+            exit $LASTEXITCODE
+          }
+
+          Write-Host "::group::Selected native package versions"
+          foreach ($package in ($packages | Where-Object { $_ -ne 'base-devel' })) {
+            & $pacman -Q $package
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "::notice::Package version query did not return a concrete package for $package."
+            }
+          }
+          Write-Host "::endgroup::"
 
       - name: Resolve native build surface
         shell: powershell
@@ -616,7 +672,7 @@ jobs:
           Push-Location $probeDir
           & $rubyExe $probeScript
           $probeExit = $LASTEXITCODE
-          if ($probeExit -ne 0 -and (Test-Path (Join-Path $probeDir 'mkmf.log'))) {
+          if ($probeExit -ne 0 -and $env:DIAGNOSTIC_MKMF_LOGS -eq 'true' -and (Test-Path (Join-Path $probeDir 'mkmf.log'))) {
             Write-Host "::group::mkmf probe log"
             Get-Content (Join-Path $probeDir 'mkmf.log') -Raw
             Write-Host "::endgroup::"
@@ -633,7 +689,7 @@ jobs:
           function Invoke-Checked([string] $message, [scriptblock] $block) {
             & $block
             if ($LASTEXITCODE -ne 0) {
-              if ($harnessRoot -and (Test-Path $harnessRoot)) {
+              if ($env:DIAGNOSTIC_MKMF_LOGS -eq 'true' -and $harnessRoot -and (Test-Path $harnessRoot)) {
                 $logs = @(Get-ChildItem -Path $harnessRoot -Recurse -Filter mkmf.log -File -ErrorAction SilentlyContinue)
                 foreach ($log in $logs) {
                   Write-Host "::group::mkmf log: $($log.FullName)"
