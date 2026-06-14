@@ -809,6 +809,27 @@ jobs:
               }
               Write-Host "::endgroup::"
 
+              $vendorSource = Join-Path $env:GITHUB_WORKSPACE 'gems\gobject-introspection\vendor\local'
+              $runtimeVendorTargets = @(
+                'glib2',
+                'gio2',
+                'cairo',
+                'cairo-gobject',
+                'pango',
+                'gdk_pixbuf2',
+                'atk',
+                'gdk3',
+                'gtk3'
+              )
+              foreach ($targetGemName in $runtimeVendorTargets) {
+                $targetVendor = Join-Path $env:GITHUB_WORKSPACE "gems\$targetGemName\vendor\local"
+                if (Test-Path $targetVendor) {
+                  Remove-Item $targetVendor -Recurse -Force
+                }
+                New-Item -ItemType Directory -Path $targetVendor -Force | Out-Null
+                Copy-Item (Join-Path $vendorSource '*') $targetVendor -Recurse -Force
+              }
+
               Push-Location (Join-Path $env:GITHUB_WORKSPACE 'gems\gobject-introspection')
               & $gemExe build gobject-introspection.gemspec
               if ($LASTEXITCODE -ne 0) {
@@ -818,6 +839,23 @@ jobs:
               }
               $rebuiltGI = Get-ChildItem -Filter 'gobject-introspection-*.gem' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
               Copy-Item $rebuiltGI.FullName (Join-Path $env:GITHUB_WORKSPACE 'pkg') -Force
+              Pop-Location
+
+              Push-Location (Join-Path $env:GITHUB_WORKSPACE 'gems\glib2')
+              & $gemExe build glib2.gemspec
+              if ($LASTEXITCODE -ne 0) {
+                Pop-Location
+                Write-Error "GTK3 suite build failed: could not rebuild glib2 with bundled GTK/GI runtime assets."
+                exit $LASTEXITCODE
+              }
+              $rebuiltGLib = Get-ChildItem -Filter 'glib2-*.gem' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+              Copy-Item $rebuiltGLib.FullName (Join-Path $env:GITHUB_WORKSPACE 'pkg') -Force
+              & $gemExe install $rebuiltGLib.FullName --local --force
+              if ($LASTEXITCODE -ne 0) {
+                Pop-Location
+                Write-Error "GTK3 suite build failed: local install failed for rebuilt $($rebuiltGLib.Name)."
+                exit $LASTEXITCODE
+              }
               Pop-Location
             }
 
@@ -971,26 +1009,155 @@ jobs:
           }
           Write-Host "::endgroup::"
 
+          $runtimeGemExcludes = @(
+            'bigdecimal',
+            'debug',
+            'fiddle',
+            'irb',
+            'minitest',
+            'native-package-installer',
+            'nkf',
+            'pkg-config',
+            'power_assert',
+            'racc',
+            'rake',
+            'rbs',
+            'rdoc',
+            'reline',
+            'repl_type_completor',
+            'test-unit',
+            'typeprof',
+            'win32ole'
+          )
+          $env:RUNTIME_GEM_EXCLUDES = $runtimeGemExcludes -join ' '
+          "RUNTIME_GEM_EXCLUDES=$env:RUNTIME_GEM_EXCLUDES" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+          $manifestScript = @(
+            'require "rubygems"',
+            'require "set"',
+            '',
+            'requested = ENV.fetch("LICH_RUNTIME_GEMS").split(/[,\s]+/).reject(&:empty?)',
+            'excluded = ENV.fetch("RUNTIME_GEM_EXCLUDES").split(/[,\s]+/).reject(&:empty?).to_set',
+            'queue = requested.dup',
+            'selected = {}',
+            '',
+            'until queue.empty?',
+            '  name = queue.shift',
+            '  next if name.nil? || name.empty? || excluded.include?(name)',
+            '  specs = Gem::Specification.find_all_by_name(name)',
+            '  spec = specs.reject(&:default_gem?).max_by(&:version) || specs.max_by(&:version)',
+            '  abort("runtime gem manifest failed: installed gem #{name.inspect} was not found") unless spec',
+            '  next if spec.default_gem? || excluded.include?(spec.name) || selected.key?(spec.name)',
+            '  selected[spec.name] = spec',
+            '  spec.runtime_dependencies.each do |dependency|',
+            '    queue << dependency.name unless excluded.include?(dependency.name) || selected.key?(dependency.name)',
+            '  end',
+            'end',
+            '',
+            'selected.values.sort_by(&:name).each do |spec|',
+            '  puts [spec.name, spec.version.to_s, spec.full_name].join("\t")',
+            'end'
+          ) -join "`n"
+          $manifestScriptPath = Join-Path $env:RUNNER_TEMP 'runtime-gem-manifest.rb'
+          Set-Content -Path $manifestScriptPath -Value $manifestScript -Encoding ascii
+
+          $manifestRows = @(& $rubyExe $manifestScriptPath)
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Lich runtime gem closure failed: runtime gem manifest generation failed."
+            exit $LASTEXITCODE
+          }
+
+          $manifestPath = Join-Path $pkgDir 'runtime-gems-manifest.txt'
+          $installScriptPath = Join-Path $pkgDir 'install-runtime-gems.cmd'
           $cacheRoots = @(
             (Join-Path $rubyRoot 'lib\ruby\gems\4.0.0\cache')
             (Join-Path $env:USERPROFILE '.local\share\gem\ruby\4.0.0\cache')
           ) | Where-Object { Test-Path $_ } | Sort-Object -Unique
 
-          if ($cacheRoots.Count -eq 0) {
-            Write-Error "Lich runtime gem closure failed: no RubyGems cache directories were found after runtime gem install."
-            exit 1
+          $manifestFiles = [System.Collections.Generic.List[string]]::new()
+          $prebuiltPackageGemNames = @(
+            'glib2',
+            'gobject-introspection',
+            'gio2',
+            'cairo',
+            'cairo-gobject',
+            'pango',
+            'gdk_pixbuf2',
+            'atk',
+            'gdk3',
+            'gtk3'
+          )
+          Write-Host "::group::Collect manifest-selected runtime gem files"
+          foreach ($gemName in $prebuiltPackageGemNames) {
+            $platformGem = Get-ChildItem -Path $pkgDir -Filter "$gemName-*.gem" -File |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1
+            if (-not $platformGem) {
+              Write-Error "Lich runtime gem closure failed: expected prebuilt package gem $gemName was not found in pkg."
+              exit 1
+            }
+            $manifestFiles.Add($platformGem.Name)
+            Write-Host $platformGem.Name
           }
+          foreach ($row in $manifestRows) {
+            if ([string]::IsNullOrWhiteSpace($row)) {
+              continue
+            }
+            $parts = $row -split "`t"
+            if ($parts.Count -lt 3) {
+              Write-Error "Lich runtime gem closure failed: malformed manifest row: $row"
+              exit 1
+            }
+            $gemName = $parts[0]
+            $fullName = $parts[2]
+            $fileName = "$fullName.gem"
+            $existingPkgGem = Join-Path $pkgDir $fileName
+            if (Test-Path $existingPkgGem) {
+              $manifestFiles.Add($fileName)
+              Write-Host $fileName
+              continue
+            }
 
-          Write-Host "::group::Collect cached runtime gem files"
-          foreach ($cacheRoot in $cacheRoots) {
-            Write-Host "Cache root: $cacheRoot"
-            Get-ChildItem -Path $cacheRoot -Filter '*.gem' -File |
-              ForEach-Object {
-                Copy-Item $_.FullName (Join-Path $pkgDir $_.Name) -Force
-                Write-Host $_.Name
+            $sourceGem = $null
+            foreach ($cacheRoot in $cacheRoots) {
+              $candidate = Join-Path $cacheRoot $fileName
+              if (Test-Path $candidate) {
+                $sourceGem = $candidate
+                break
               }
+            }
+            if (-not $sourceGem) {
+              Write-Error "Lich runtime gem closure failed: manifest selected $fileName for $gemName, but no matching .gem file was found in pkg or RubyGems cache."
+              exit 1
+            }
+            Copy-Item $sourceGem (Join-Path $pkgDir $fileName) -Force
+            $manifestFiles.Add($fileName)
+            Write-Host $fileName
           }
           Write-Host "::endgroup::"
+
+          $seenManifestFiles = [System.Collections.Hashtable]::new([StringComparer]::OrdinalIgnoreCase)
+          $manifestFiles = @($manifestFiles | Where-Object {
+            if ($seenManifestFiles.ContainsKey($_)) {
+              $false
+            } else {
+              $seenManifestFiles[$_] = $true
+              $true
+            }
+          })
+          Set-Content -Path $manifestPath -Value $manifestFiles -Encoding ascii
+          $installScript = @(
+            '@echo off',
+            'setlocal',
+            'pushd "%~dp0"',
+            'for /f "usebackq delims=" %%G in ("runtime-gems-manifest.txt") do (',
+            '  gem install --local --no-document "%%G"',
+            '  if errorlevel 1 exit /b 1',
+            ')',
+            'popd',
+            'endlocal'
+          ) -join "`r`n"
+          Set-Content -Path $installScriptPath -Value $installScript -Encoding ascii
 
           foreach ($gemName in $nativeRuntimeRepackGems) {
             $platformGem = Get-ChildItem -Path $pkgDir -Filter "$gemName-*$env:GEM_PLATFORM.gem" -File |
@@ -1118,7 +1285,7 @@ jobs:
           $gems | ForEach-Object { Write-Host $_.Name }
           Write-Host "::endgroup::"
 
-          Compress-Archive -Path (Join-Path $pkgDir '*.gem') -DestinationPath $zipPath -Force
+          Compress-Archive -Path @((Join-Path $pkgDir '*.gem'), (Join-Path $pkgDir 'runtime-gems-manifest.txt'), (Join-Path $pkgDir 'install-runtime-gems.cmd')) -DestinationPath $zipPath -Force
           if (!(Test-Path $zipPath)) {
             Write-Error "Lich runtime gem bundle failed: $zipPath was not created."
             exit 1
@@ -1126,12 +1293,90 @@ jobs:
 
           Write-Host "Created $zipPath"
 
+      - name: Smoke packaged runtime gem bundle on clean RubyInstaller
+        shell: powershell
+        run: |
+          $pkgDir = Join-Path $env:GITHUB_WORKSPACE 'pkg'
+          $manifestPath = Join-Path $pkgDir 'runtime-gems-manifest.txt'
+          if (!(Test-Path $manifestPath)) {
+            Write-Error "Clean packaged smoke failed: runtime-gems-manifest.txt is missing from $pkgDir."
+            exit 1
+          }
+
+          $rubyInstallerVersion = $env:RUBY_INSTALLER_VERSION
+          $archive = Join-Path $env:RUNNER_TEMP "rubyinstaller-$rubyInstallerVersion-x64.7z"
+          if (!(Test-Path $archive)) {
+            Write-Error "Clean packaged smoke failed: RubyInstaller archive is missing at $archive."
+            exit 1
+          }
+
+          $smokeParent = 'C:\Ruby4Lich5\clean-smoke-ruby'
+          if (Test-Path $smokeParent) {
+            Remove-Item $smokeParent -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $smokeParent -Force | Out-Null
+
+          $sevenZip = "${env:ProgramFiles}\7-Zip\7z.exe"
+          if (!(Test-Path $sevenZip)) {
+            $sevenZip = '7z.exe'
+          }
+          & $sevenZip x $archive "-o$smokeParent" -y
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Clean packaged smoke failed: RubyInstaller extraction failed."
+            exit $LASTEXITCODE
+          }
+
+          $rubyExe = Get-ChildItem $smokeParent -Recurse -Filter ruby.exe -File | Where-Object {
+            $_.FullName -match '\\bin\\ruby\.exe$'
+          } | Select-Object -First 1
+          if (-not $rubyExe) {
+            Write-Error "Clean packaged smoke failed: ruby.exe was not found under $smokeParent."
+            exit 1
+          }
+          $rubyRoot = Split-Path (Split-Path $rubyExe.FullName -Parent) -Parent
+          $gemExe = Join-Path $rubyRoot 'bin\gem.cmd'
+          if (!(Test-Path $gemExe)) {
+            Write-Error "Clean packaged smoke failed: gem.cmd was not found at $gemExe."
+            exit 1
+          }
+
+          $env:Path = "$rubyRoot\bin;C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0"
+          Remove-Item Env:\RI_DEVKIT -ErrorAction SilentlyContinue
+          Remove-Item Env:\MSYSTEM -ErrorAction SilentlyContinue
+          Remove-Item Env:\MSYSTEM_PREFIX -ErrorAction SilentlyContinue
+          Remove-Item Env:\MINGW_PREFIX -ErrorAction SilentlyContinue
+          Remove-Item Env:\PKG_CONFIG_PATH -ErrorAction SilentlyContinue
+          Remove-Item Env:\GI_TYPELIB_PATH -ErrorAction SilentlyContinue
+          Remove-Item Env:\GDK_PIXBUF_MODULEDIR -ErrorAction SilentlyContinue
+
+          $gemFiles = @(Get-Content $manifestPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { Join-Path $pkgDir $_ })
+          foreach ($gemFile in $gemFiles) {
+            if (!(Test-Path $gemFile)) {
+              Write-Error "Clean packaged smoke failed: manifest gem is missing: $gemFile."
+              exit 1
+            }
+          }
+
+          & $gemExe install --local --no-document --force @gemFiles
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Clean packaged smoke failed: manifest gem install failed on non-DevKit RubyInstaller."
+            exit $LASTEXITCODE
+          }
+
+          & $rubyExe.FullName -e "require 'sqlite3'; require 'nokogiri'; require 'ox'; require 'mechanize'; require 'ascii_charts'; require 'cairo'; require 'gtk3'; Gtk.init; puts 'Clean packaged Ruby4/Lich runtime smoke OK'"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Clean packaged smoke failed: runtime require set failed on non-DevKit RubyInstaller."
+            exit $LASTEXITCODE
+          }
+
       - name: Upload Lich runtime gems
         uses: actions/upload-artifact@v4
         with:
           name: ruby4-lich5-runtime-gems-windows-ucrt64
           path: |
             pkg/*.gem
+            pkg/runtime-gems-manifest.txt
+            pkg/install-runtime-gems.cmd
             dist/*.zip
           retention-days: 90
           if-no-files-found: error
