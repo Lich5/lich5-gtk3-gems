@@ -429,8 +429,11 @@ jobs:
             }
             $content = Read-Text $gemspec
             $content = $content -replace '(?m)^\s*s\.extensions\s*=.*\r?\n', ''
-            $content = $content -replace '(?m)^\s*s\.add_runtime_dependency\("pkg-config".*\r?\n', ''
-            $content = $content -replace '(?m)^\s*s\.add_runtime_dependency\("native-package-installer".*\r?\n', ''
+            # Strip build-only deps regardless of gemspec format. Source-ZIP gems
+            # write s.add_runtime_dependency("pkg-config", ...), but gem-unpacked
+            # ones (cairo) write the serialized %q<pkg-config> form, so match both.
+            $content = $content -replace '(?m)^.*add_runtime_dependency.*pkg-config.*\r?\n', ''
+            $content = $content -replace '(?m)^.*add_runtime_dependency.*native-package-installer.*\r?\n', ''
             if ($gemName -eq 'cairo') {
               $content = $content.Replace('1.18.4', $cairoVersion)
               $content = $content -replace '= 4\.3\.\d+', "= $rubyGnomeVersion"
