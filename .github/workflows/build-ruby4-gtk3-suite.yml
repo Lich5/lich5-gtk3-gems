@@ -1090,6 +1090,7 @@ jobs:
           Write-Host "::group::Collect manifest-selected runtime gem files"
           foreach ($gemName in $prebuiltPackageGemNames) {
             $platformGem = Get-ChildItem -Path $pkgDir -Filter "$gemName-*.gem" -File |
+              Where-Object { $_.Name -match "^$([regex]::Escape($gemName))-\d" } |
               Sort-Object LastWriteTime -Descending |
               Select-Object -First 1
             if (-not $platformGem) {
@@ -1161,10 +1162,11 @@ jobs:
 
           foreach ($gemName in $nativeRuntimeRepackGems) {
             $platformGem = Get-ChildItem -Path $pkgDir -Filter "$gemName-*$env:GEM_PLATFORM.gem" -File |
+              Where-Object { $_.Name -match "^$([regex]::Escape($gemName))-\d.*-$([regex]::Escape($env:GEM_PLATFORM))\.gem$" } |
               Select-Object -First 1
             if ($platformGem) {
               Get-ChildItem -Path $pkgDir -Filter "$gemName-*.gem" -File |
-                Where-Object { $_.Name -ne $platformGem.Name } |
+                Where-Object { $_.Name -match "^$([regex]::Escape($gemName))-\d" -and $_.Name -ne $platformGem.Name } |
                 Remove-Item -Force
             }
           }
@@ -1178,6 +1180,7 @@ jobs:
           Write-Host "::group::Validate native runtime binary gems"
           foreach ($gemName in $nativeRuntimeGems) {
             $platformGem = Get-ChildItem -Path $pkgDir -Filter "$gemName-*$env:GEM_PLATFORM.gem" -File |
+              Where-Object { $_.Name -match "^$([regex]::Escape($gemName))-\d.*-$([regex]::Escape($env:GEM_PLATFORM))\.gem$" } |
               Sort-Object LastWriteTime -Descending |
               Select-Object -First 1
             if (-not $platformGem) {
@@ -1268,11 +1271,27 @@ jobs:
         run: |
           $pkgDir = Join-Path $env:GITHUB_WORKSPACE 'pkg'
           $distDir = Join-Path $env:GITHUB_WORKSPACE 'dist'
+          $stagedPkgDir = Join-Path $distDir 'pkg'
           New-Item -ItemType Directory -Path $distDir -Force | Out-Null
+          if (Test-Path $stagedPkgDir) {
+            Remove-Item $stagedPkgDir -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $stagedPkgDir -Force | Out-Null
 
-          $gems = @(Get-ChildItem -Path $pkgDir -Filter '*.gem' -File | Sort-Object Name)
-          if ($gems.Count -eq 0) {
-            Write-Error "Lich runtime gem bundle failed: no .gem files found in $pkgDir."
+          $manifestPath = Join-Path $pkgDir 'runtime-gems-manifest.txt'
+          $installScriptPath = Join-Path $pkgDir 'install-runtime-gems.cmd'
+          if (!(Test-Path $manifestPath)) {
+            Write-Error "Lich runtime gem bundle failed: runtime-gems-manifest.txt is missing from $pkgDir."
+            exit 1
+          }
+          if (!(Test-Path $installScriptPath)) {
+            Write-Error "Lich runtime gem bundle failed: install-runtime-gems.cmd is missing from $pkgDir."
+            exit 1
+          }
+
+          $manifestFiles = @(Get-Content $manifestPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+          if ($manifestFiles.Count -eq 0) {
+            Write-Error "Lich runtime gem bundle failed: runtime-gems-manifest.txt is empty."
             exit 1
           }
 
@@ -1282,10 +1301,20 @@ jobs:
           }
 
           Write-Host "::group::Lich runtime gem bundle contents"
-          $gems | ForEach-Object { Write-Host $_.Name }
+          foreach ($manifestFile in $manifestFiles) {
+            $source = Join-Path $pkgDir $manifestFile
+            if (!(Test-Path $source)) {
+              Write-Error "Lich runtime gem bundle failed: manifest file $manifestFile is missing from $pkgDir."
+              exit 1
+            }
+            Copy-Item $source (Join-Path $stagedPkgDir $manifestFile) -Force
+            Write-Host $manifestFile
+          }
+          Copy-Item $manifestPath (Join-Path $stagedPkgDir 'runtime-gems-manifest.txt') -Force
+          Copy-Item $installScriptPath (Join-Path $stagedPkgDir 'install-runtime-gems.cmd') -Force
           Write-Host "::endgroup::"
 
-          Compress-Archive -Path @((Join-Path $pkgDir '*.gem'), (Join-Path $pkgDir 'runtime-gems-manifest.txt'), (Join-Path $pkgDir 'install-runtime-gems.cmd')) -DestinationPath $zipPath -Force
+          Compress-Archive -Path (Join-Path $stagedPkgDir '*') -DestinationPath $zipPath -Force
           if (!(Test-Path $zipPath)) {
             Write-Error "Lich runtime gem bundle failed: $zipPath was not created."
             exit 1
@@ -1296,7 +1325,7 @@ jobs:
       - name: Smoke packaged runtime gem bundle on clean RubyInstaller
         shell: powershell
         run: |
-          $pkgDir = Join-Path $env:GITHUB_WORKSPACE 'pkg'
+          $pkgDir = Join-Path $env:GITHUB_WORKSPACE 'dist\pkg'
           $manifestPath = Join-Path $pkgDir 'runtime-gems-manifest.txt'
           if (!(Test-Path $manifestPath)) {
             Write-Error "Clean packaged smoke failed: runtime-gems-manifest.txt is missing from $pkgDir."
@@ -1374,9 +1403,7 @@ jobs:
         with:
           name: ruby4-lich5-runtime-gems-windows-ucrt64
           path: |
-            pkg/*.gem
-            pkg/runtime-gems-manifest.txt
-            pkg/install-runtime-gems.cmd
+            dist/pkg/*
             dist/*.zip
           retention-days: 90
           if-no-files-found: error
