@@ -474,7 +474,8 @@ jobs:
           $glib2Insert = @(
             'base_dir = Pathname.new(__FILE__).dirname.dirname.expand_path',
             'vendor_dir = base_dir + "vendor" + "local"',
-            'GLib.prepend_dll_path(vendor_dir + "bin")'
+            'GLib.prepend_dll_path(vendor_dir + "bin")',
+            'major, minor, _ = RUBY_VERSION.split(/\./)'
           ) -join "`n"
           Insert-Before $glib2 'require "glib2.so"' $glib2Insert
           $glib2Content = Read-Text $glib2
