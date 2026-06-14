@@ -48,13 +48,13 @@ on:
         required: false
         default: "Gemfile.lock"
       lich-runtime-gems:
-        description: "Whitespace or comma separated runtime gems to add when dependency-closure-source=explicit-list."
+        description: "Whitespace or comma separated top-level runtime gems to install when dependency-closure-source=explicit-list."
         required: false
-        default: "red-colors sqlite3 ox nokogiri mechanize ascii_charts concurrent-ruby ffi kramdown mini_portile2 os redis redis-client sequel set terminal-table tzinfo tzinfo-data unicode-display_width unicode-emoji curses"
+        default: "gtk3 sqlite3 ox ascii_charts curses os redis sequel set terminal-table kramdown tzinfo tzinfo-data concurrent-ruby ffi webrick"
       lich-native-runtime-gems:
         description: "Whitespace or comma separated Lich runtime gems that must resolve to binary platform gems."
         required: false
-        default: "sqlite3 ox nokogiri ffi curses"
+        default: "sqlite3 ox ffi curses"
 
 permissions:
   contents: read
@@ -672,10 +672,9 @@ jobs:
             if ($gemName -eq 'gobject-introspection') {
               $giVendor = Join-Path $env:GITHUB_WORKSPACE 'gems\gobject-introspection\vendor\local'
               $typelibDst = Join-Path $giVendor 'lib\girepository-1.0'
-              $binDst = Join-Path $giVendor 'bin'
               $fontDst = Join-Path $giVendor 'etc\fonts'
               $loaderDst = Join-Path $giVendor 'lib\gdk-pixbuf-2.0\2.10.0\loaders'
-              New-Item -ItemType Directory -Force -Path $typelibDst, $binDst, $fontDst, $loaderDst | Out-Null
+              New-Item -ItemType Directory -Force -Path $typelibDst, $fontDst, $loaderDst | Out-Null
 
               Copy-Item "$msys\$prefix\lib\girepository-1.0\*.typelib" $typelibDst -Force
 
@@ -802,32 +801,38 @@ jobs:
               }
 
               Write-Host "::group::Bundled GTK/GI runtime DLL closure"
+              $runtimeBinTargets = @(
+                Join-Path $env:GITHUB_WORKSPACE 'gems\glib2\vendor\local\bin'
+                Join-Path $env:GITHUB_WORKSPACE 'gems\cairo\vendor\local\bin'
+              )
+              foreach ($runtimeBinTarget in $runtimeBinTargets) {
+                if (Test-Path $runtimeBinTarget) {
+                  Remove-Item $runtimeBinTarget -Recurse -Force
+                }
+                New-Item -ItemType Directory -Path $runtimeBinTarget -Force | Out-Null
+              }
               foreach ($dll in ($runtimeDlls.Keys | Sort-Object)) {
                 $sourceDll = $runtimeDlls[$dll]
-                Copy-Item $sourceDll $binDst -Force
+                foreach ($runtimeBinTarget in $runtimeBinTargets) {
+                  Copy-Item $sourceDll $runtimeBinTarget -Force
+                }
                 Write-Host $dll
               }
               Write-Host "::endgroup::"
 
-              $vendorSource = Join-Path $env:GITHUB_WORKSPACE 'gems\gobject-introspection\vendor\local'
-              $runtimeVendorTargets = @(
-                'glib2',
-                'gio2',
-                'cairo',
-                'cairo-gobject',
-                'pango',
-                'gdk_pixbuf2',
-                'atk',
-                'gdk3',
-                'gtk3'
-              )
-              foreach ($targetGemName in $runtimeVendorTargets) {
-                $targetVendor = Join-Path $env:GITHUB_WORKSPACE "gems\$targetGemName\vendor\local"
-                if (Test-Path $targetVendor) {
-                  Remove-Item $targetVendor -Recurse -Force
-                }
-                New-Item -ItemType Directory -Path $targetVendor -Force | Out-Null
-                Copy-Item (Join-Path $vendorSource '*') $targetVendor -Recurse -Force
+              $fontConfig = Join-Path $fontDst 'fonts.conf'
+              if (!(Test-Path $fontConfig)) {
+                Write-Error "GTK3 suite build failed: expected Fontconfig configuration was not bundled at $fontConfig."
+                exit 1
+              }
+              $staleGIVersionReferences = @(Get-ChildItem -Path $giVendor -Recurse -File |
+                Select-String -Pattern 'gobject-introspection-4.3.4' -SimpleMatch -List -ErrorAction SilentlyContinue)
+              if ($staleGIVersionReferences.Count -gt 0) {
+                Write-Host "::group::Stale gobject-introspection 4.3.4 references"
+                $staleGIVersionReferences | ForEach-Object { Write-Host $_.Path }
+                Write-Host "::endgroup::"
+                Write-Error "GTK3 suite build failed: bundled GI vendor assets contain stale gobject-introspection-4.3.4 references."
+                exit 1
               }
 
               Push-Location (Join-Path $env:GITHUB_WORKSPACE 'gems\gobject-introspection')
@@ -1068,6 +1073,7 @@ jobs:
           }
 
           $manifestPath = Join-Path $pkgDir 'runtime-gems-manifest.txt'
+          $installTargetsPath = Join-Path $pkgDir 'runtime-gems-install-targets.txt'
           $installScriptPath = Join-Path $pkgDir 'install-runtime-gems.cmd'
           $cacheRoots = @(
             (Join-Path $rubyRoot 'lib\ruby\gems\4.0.0\cache')
@@ -1147,11 +1153,20 @@ jobs:
             }
           })
           Set-Content -Path $manifestPath -Value $manifestFiles -Encoding ascii
+
+          $installTargets = @($runtimeGems | Where-Object {
+            $runtimeGemExcludes -notcontains $_
+          } | Sort-Object -Unique)
+          if ($installTargets.Count -eq 0) {
+            Write-Error "Lich runtime gem closure failed: no runtime install targets were selected."
+            exit 1
+          }
+          Set-Content -Path $installTargetsPath -Value $installTargets -Encoding ascii
           $installScript = @(
             '@echo off',
             'setlocal',
             'pushd "%~dp0"',
-            'for /f "usebackq delims=" %%G in ("runtime-gems-manifest.txt") do (',
+            'for /f "usebackq delims=" %%G in ("runtime-gems-install-targets.txt") do (',
             '  gem install --local --no-document "%%G"',
             '  if errorlevel 1 exit /b 1',
             ')',
@@ -1208,14 +1223,19 @@ jobs:
             Write-Error "Ruby4 GTK3/Lich runtime smoke failed: could not resolve installed gobject-introspection gem path."
             exit 1
           }
-          $giVendorBin = Join-Path $giGemDir 'vendor\local\bin'
-          $giVendorTypelib = Join-Path $giGemDir 'vendor\local\lib\girepository-1.0'
-          $giRuntimeDlls = @(Get-ChildItem -Path $giVendorBin -Filter 'libgirepository*.dll' -File -ErrorAction SilentlyContinue)
-          if ($giRuntimeDlls.Count -eq 0) {
-            Write-Error "Ruby4 GTK3/Lich runtime smoke failed: expected bundled GI runtime DLL missing under $giVendorBin."
+          $glib2GemDir = & $rubyExe -e "require 'rubygems'; print Gem::Specification.find_by_name('glib2').full_gem_path"
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($glib2GemDir)) {
+            Write-Error "Ruby4 GTK3/Lich runtime smoke failed: could not resolve installed glib2 gem path."
             exit 1
           }
-          $env:Path = "$giVendorBin;$env:Path"
+          $runtimeVendorBin = Join-Path $glib2GemDir 'vendor\local\bin'
+          $giVendorTypelib = Join-Path $giGemDir 'vendor\local\lib\girepository-1.0'
+          $giRuntimeDlls = @(Get-ChildItem -Path $runtimeVendorBin -Filter 'libgirepository*.dll' -File -ErrorAction SilentlyContinue)
+          if ($giRuntimeDlls.Count -eq 0) {
+            Write-Error "Ruby4 GTK3/Lich runtime smoke failed: expected bundled GI runtime DLL missing under $runtimeVendorBin."
+            exit 1
+          }
+          $env:Path = "$runtimeVendorBin;$env:Path"
           if (Test-Path $giVendorTypelib) {
             $env:GI_TYPELIB_PATH = $giVendorTypelib
           }
@@ -1232,35 +1252,29 @@ jobs:
             'atk',
             'gdk3',
             'gtk3',
-            'red-colors',
             'sqlite3',
             'ox',
-            'nokogiri',
-            'mechanize',
             'ascii_charts',
+            'curses',
             'concurrent-ruby',
             'ffi',
             'kramdown',
-            'mini_portile2',
             'os',
             'redis',
-            'redis-client',
             'sequel',
             'set',
             'terminal-table',
             'tzinfo',
             'tzinfo-data',
-            'unicode-display_width',
-            'unicode-emoji',
-            'curses'
+            'webrick'
           )) {
             & $gemExe list $gemName
           }
-          Write-Host "GI vendor bin: $giVendorBin"
+          Write-Host "Runtime vendor bin: $runtimeVendorBin"
           Write-Host "GI_TYPELIB_PATH=$env:GI_TYPELIB_PATH"
           Write-Host "::endgroup::"
 
-          & $rubyExe -e "require 'sqlite3'; require 'ox'; require 'ffi'; require 'ascii_charts'; require 'kramdown'; require 'redis'; require 'sequel'; require 'terminal-table'; require 'tzinfo'; require 'curses'; require 'glib2'; require 'gtk3'; Gtk.init; puts 'Ruby4 GTK3/Lich runtime smoke OK'"
+          & $rubyExe -e "require 'sqlite3'; require 'ox'; require 'ffi'; require 'ascii_charts'; require 'kramdown'; require 'webrick'; require 'redis'; require 'sequel'; require 'set'; require 'terminal-table'; require 'tzinfo'; require 'curses'; require 'os'; require 'glib2'; require 'cairo'; require 'gtk3'; Gtk.init; puts 'Ruby4 GTK3/Lich runtime smoke OK'"
           if ($LASTEXITCODE -ne 0) {
             Write-Error "Ruby4 GTK3/Lich runtime smoke failed."
             exit $LASTEXITCODE
@@ -1279,9 +1293,14 @@ jobs:
           New-Item -ItemType Directory -Path $stagedPkgDir -Force | Out-Null
 
           $manifestPath = Join-Path $pkgDir 'runtime-gems-manifest.txt'
+          $installTargetsPath = Join-Path $pkgDir 'runtime-gems-install-targets.txt'
           $installScriptPath = Join-Path $pkgDir 'install-runtime-gems.cmd'
           if (!(Test-Path $manifestPath)) {
             Write-Error "Lich runtime gem bundle failed: runtime-gems-manifest.txt is missing from $pkgDir."
+            exit 1
+          }
+          if (!(Test-Path $installTargetsPath)) {
+            Write-Error "Lich runtime gem bundle failed: runtime-gems-install-targets.txt is missing from $pkgDir."
             exit 1
           }
           if (!(Test-Path $installScriptPath)) {
@@ -1295,9 +1314,37 @@ jobs:
             exit 1
           }
 
-          $zipPath = Join-Path $distDir 'ruby4-lich5-runtime-gems-windows-ucrt64.zip'
-          if (Test-Path $zipPath) {
-            Remove-Item $zipPath -Force
+          $excludedPackageNames = @(
+            'benchmark',
+            'bigdecimal',
+            'debug',
+            'fiddle',
+            'irb',
+            'minitest',
+            'native-package-installer',
+            'nkf',
+            'pkg-config',
+            'power_assert',
+            'racc',
+            'rake',
+            'rbs',
+            'rdoc',
+            'reline',
+            'repl_type_completor',
+            'test-unit',
+            'typeprof',
+            'win32ole'
+          )
+          foreach ($excludedPackageName in $excludedPackageNames) {
+            $escaped = [regex]::Escape($excludedPackageName)
+            $matches = @($manifestFiles | Where-Object { $_ -match "^$escaped-\d" })
+            if ($matches.Count -gt 0) {
+              Write-Host "::group::Excluded runtime gems in manifest"
+              $matches | ForEach-Object { Write-Host $_ }
+              Write-Host "::endgroup::"
+              Write-Error "Lich runtime gem bundle failed: excluded package gem $excludedPackageName was selected for shipping."
+              exit 1
+            }
           }
 
           Write-Host "::group::Lich runtime gem bundle contents"
@@ -1311,24 +1358,30 @@ jobs:
             Write-Host $manifestFile
           }
           Copy-Item $manifestPath (Join-Path $stagedPkgDir 'runtime-gems-manifest.txt') -Force
+          Copy-Item $installTargetsPath (Join-Path $stagedPkgDir 'runtime-gems-install-targets.txt') -Force
           Copy-Item $installScriptPath (Join-Path $stagedPkgDir 'install-runtime-gems.cmd') -Force
           Write-Host "::endgroup::"
 
-          Compress-Archive -Path (Join-Path $stagedPkgDir '*') -DestinationPath $zipPath -Force
-          if (!(Test-Path $zipPath)) {
-            Write-Error "Lich runtime gem bundle failed: $zipPath was not created."
+          $stagedFiles = @(Get-ChildItem -Path $stagedPkgDir -File)
+          if ($stagedFiles.Count -eq 0) {
+            Write-Error "Lich runtime gem bundle failed: no staged files were created."
             exit 1
           }
 
-          Write-Host "Created $zipPath"
+          Write-Host "Staged $($stagedFiles.Count) runtime package files under $stagedPkgDir"
 
       - name: Smoke packaged runtime gem bundle on clean RubyInstaller
         shell: powershell
         run: |
           $pkgDir = Join-Path $env:GITHUB_WORKSPACE 'dist\pkg'
           $manifestPath = Join-Path $pkgDir 'runtime-gems-manifest.txt'
+          $installTargetsPath = Join-Path $pkgDir 'runtime-gems-install-targets.txt'
           if (!(Test-Path $manifestPath)) {
             Write-Error "Clean packaged smoke failed: runtime-gems-manifest.txt is missing from $pkgDir."
+            exit 1
+          }
+          if (!(Test-Path $installTargetsPath)) {
+            Write-Error "Clean packaged smoke failed: runtime-gems-install-targets.txt is missing from $pkgDir."
             exit 1
           }
 
@@ -1385,14 +1438,82 @@ jobs:
               exit 1
             }
           }
+          $installTargets = @(Get-Content $installTargetsPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+          if ($installTargets.Count -eq 0) {
+            Write-Error "Clean packaged smoke failed: runtime-gems-install-targets.txt is empty."
+            exit 1
+          }
 
-          & $gemExe install --local --no-document --force @gemFiles
+          Push-Location $pkgDir
+          & $gemExe install --local --no-document --force @installTargets
+          $installExit = $LASTEXITCODE
+          Pop-Location
+          if ($installExit -ne 0) {
+            Write-Error "Clean packaged smoke failed: install targets failed on non-DevKit RubyInstaller."
+            exit $installExit
+          }
+
+          $excludedPackageNames = @(
+            'benchmark',
+            'bigdecimal',
+            'debug',
+            'fiddle',
+            'irb',
+            'minitest',
+            'native-package-installer',
+            'nkf',
+            'pkg-config',
+            'power_assert',
+            'racc',
+            'rake',
+            'rbs',
+            'rdoc',
+            'reline',
+            'repl_type_completor',
+            'test-unit',
+            'typeprof',
+            'win32ole'
+          )
+          foreach ($excludedPackageName in $excludedPackageNames) {
+            $escaped = [regex]::Escape($excludedPackageName)
+            $matches = @($gemFiles | Where-Object { (Split-Path $_ -Leaf) -match "^$escaped-\d" })
+            if ($matches.Count -gt 0) {
+              Write-Host "::group::Excluded runtime gems in packaged smoke"
+              $matches | ForEach-Object { Write-Host $_ }
+              Write-Host "::endgroup::"
+              Write-Error "Clean packaged smoke failed: excluded package gem $excludedPackageName was staged for shipping."
+              exit 1
+            }
+          }
+
+          $fontconfigSmoke = @(
+            'require "rubygems"',
+            'require "gobject-introspection"',
+            '',
+            'specs = Gem::Specification.find_all_by_name("gobject-introspection")',
+            'abort("gobject-introspection 4.3.4 was installed unexpectedly") if specs.any? { |spec| spec.version.to_s == "4.3.4" }',
+            '',
+            'spec = Gem::Specification.find_by_name("gobject-introspection")',
+            'fontconfig_path = ENV["FONTCONFIG_PATH"]',
+            'abort("FONTCONFIG_PATH was not set by gobject-introspection") if fontconfig_path.nil? || fontconfig_path.empty?',
+            'abort("FONTCONFIG_PATH contains stale gobject-introspection 4.3.4 path: #{fontconfig_path}") if fontconfig_path.include?("gobject-introspection-4.3.4")',
+            '',
+            'expected = File.join(spec.full_gem_path, "vendor", "local", "etc", "fonts")',
+            'abort("FONTCONFIG_PATH mismatch: expected #{expected}, got #{fontconfig_path}") unless File.expand_path(fontconfig_path) == File.expand_path(expected)',
+            '',
+            'fonts_conf = File.join(expected, "fonts.conf")',
+            'abort("Fontconfig file missing: #{fonts_conf}") unless File.exist?(fonts_conf)',
+            'puts "gobject-introspection Fontconfig path OK: #{fontconfig_path}"'
+          ) -join "`n"
+          $fontconfigSmokePath = Join-Path $env:RUNNER_TEMP 'smoke-gobject-fontconfig.rb'
+          Set-Content -Path $fontconfigSmokePath -Value $fontconfigSmoke -Encoding ascii
+          & $rubyExe.FullName $fontconfigSmokePath
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "Clean packaged smoke failed: manifest gem install failed on non-DevKit RubyInstaller."
+            Write-Error "Clean packaged smoke failed: gobject-introspection Fontconfig validation failed on non-DevKit RubyInstaller."
             exit $LASTEXITCODE
           }
 
-          & $rubyExe.FullName -e "require 'sqlite3'; require 'nokogiri'; require 'ox'; require 'mechanize'; require 'ascii_charts'; require 'cairo'; require 'gtk3'; Gtk.init; puts 'Clean packaged Ruby4/Lich runtime smoke OK'"
+          & $rubyExe.FullName -e "require 'sqlite3'; require 'ox'; require 'ffi'; require 'ascii_charts'; require 'kramdown'; require 'webrick'; require 'redis'; require 'sequel'; require 'set'; require 'terminal-table'; require 'tzinfo'; require 'curses'; require 'os'; require 'cairo'; require 'gtk3'; Gtk.init; puts 'Clean packaged Ruby4/Lich runtime smoke OK'"
           if ($LASTEXITCODE -ne 0) {
             Write-Error "Clean packaged smoke failed: runtime require set failed on non-DevKit RubyInstaller."
             exit $LASTEXITCODE
@@ -1404,6 +1525,5 @@ jobs:
           name: ruby4-lich5-runtime-gems-windows-ucrt64
           path: |
             dist/pkg/*
-            dist/*.zip
           retention-days: 90
           if-no-files-found: error
